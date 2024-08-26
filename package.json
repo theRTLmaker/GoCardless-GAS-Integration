@@ -1,0 +1,23 @@
+{
+  "name": "gocardless-gas-integration",
+  "version": "1.0.0",
+  "description": "Google Apps Script integration with GoCardless API to create a personal finance tracker",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/theRTLmaker/GoCardless-GAS-Integration.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/theRTLmaker/GoCardless-GAS-Integration/issues"
+  },
+  "homepage": "https://github.com/theRTLmaker/GoCardless-GAS-Integration#readme",
+  "devDependencies": {
+    "@types/google-apps-script": "^1.0.83",
+    "prettier": "^2.7.1"
+  }
+}
