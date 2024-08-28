@@ -1,13 +1,9 @@
-import { CONFIG_SHEET_NAME, SECRET_ID, SECRET_KEY } from '../util';
-
-import { scriptLock } from '../lock';
-
 function initialise() {
   scriptLock(_initialise);
 }
 
 function _initialise() {
-  console.log("Initialise");
+  Logger.log("Initialise");
 
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   const ui = SpreadsheetApp.getUi();

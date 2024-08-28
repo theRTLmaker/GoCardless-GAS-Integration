@@ -10,8 +10,8 @@
     "type": "git",
     "url": "git+https://github.com/theRTLmaker/GoCardless-GAS-Integration.git"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "Francisco Mendes",
+  "license": "MTI",
   "bugs": {
     "url": "https://github.com/theRTLmaker/GoCardless-GAS-Integration/issues"
   },

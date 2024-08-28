@@ -1,113 +1,124 @@
-import { scriptLock } from '../lock';
-import { getAccessToken, goCardlessRequest, INSTITUTIONS_SHEET_NAME, REQUISITIONS_SHEET_NAME } from '../util';
-
 function linkAccount() {
   scriptLock(_linkAccount);
 }
 
 function _linkAccount() {
   const ui = SpreadsheetApp.getUi();
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
 
-  let result = ui.prompt(
-    "Please enter the institution ID:",
+  // Prompt for country code
+  const countryResult = ui.prompt(
+    "Enter country code",
+    "e.g. GB for United Kingdom",
     ui.ButtonSet.OK_CANCEL
   );
 
-  var button = result.getSelectedButton();
-  var text = result.getResponseText();
-  if (button == ui.Button.CANCEL || button == ui.Button.CLOSE) {
+  if (countryResult.getSelectedButton() !== ui.Button.OK) {
     return;
   }
 
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  let requisitionsSheet = spreadsheet.getSheetByName(REQUISITIONS_SHEET_NAME);
+  const countryCode = countryResult.getResponseText().toUpperCase();
 
-  if (!requisitionsSheet) {
-    let activeSheet = spreadsheet.getActiveSheet();
-    requisitionsSheet = spreadsheet
-      .insertSheet()
-      .setName(REQUISITIONS_SHEET_NAME);
-    spreadsheet.setActiveSheet(requisitionsSheet);
-    spreadsheet.moveActiveSheet(spreadsheet.getNumSheets());
-    requisitionsSheet.appendRow(["ID", "Status", "Institution ID"]);
-    spreadsheet.setActiveSheet(activeSheet);
-    requisitionsSheet.hideSheet();
+  // Fetch institutions for the given country
+  const accessToken = getAccessToken();
+  const institutions = fetchInstitutions(accessToken, countryCode);
+
+  if (institutions.length === 0) {
+    ui.alert("No institutions found for the given country code.");
+    return;
   }
 
-  const accessToken = getAccessToken();
-  console.log(`accessToken: ${accessToken}`);
+  // Show institution selection prompt
+  const selectedInstitution = showInstitutionSelectionPrompt(ui, institutions);
 
-  let agreementData: { id: string } | null = null;
-  {
-    // Create an agreement for max access
-    const institutionsSheet = spreadsheet.getSheetByName(
-      INSTITUTIONS_SHEET_NAME
-    )!;
-    const institutionIdx = institutionsSheet
-      .getRange(2, 1, institutionsSheet.getLastRow(), 1)
-      .getValues()
-      .map(([cell]) => cell)
-      .indexOf(text);
+  if (!selectedInstitution) {
+    return;
+  }
 
-    if (institutionIdx) {
-      const max_historical_days = institutionsSheet
-        .getRange(institutionIdx + 2, 3, 1, 1)
-        .getValue();
-      const access_valid_for_days = 90;
+  // Create agreement and requisition
+  createAgreementAndRequisition(spreadsheet, accessToken, selectedInstitution);
+}
 
-      console.log({ max_historical_days, institutionIdx, text });
+function fetchInstitutions(accessToken: string, countryCode: string) {
+  const url = `/api/v2/institutions/?country=${countryCode}`;
+  return goCardlessRequest<Array<{ id: string; name: string }>>(url, {
+    method: "get",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+  });
+}
 
-      agreementData = goCardlessRequest<{ id: string }>("/api/v2/agreements/enduser/", {
-        method: "post",
-        headers: {
-          Authorization: "Bearer " + accessToken,
-          "Content-Type": "application/json",
-        },
-        payload: JSON.stringify({
-          institution_id: text,
-          max_historical_days,
-          access_valid_for_days,
-          access_scope: ["balances", "details", "transactions"],
-        }),
-      });
+function showInstitutionSelectionPrompt(ui: GoogleAppsScript.Base.Ui, institutions: Array<{ id: string; name: string }>) {
+  const options = institutions.map(inst => inst.name);
+  const result = ui.prompt(
+    "Select an Institution",
+    "Enter the number of the institution you want to select:\n" +
+    options.map((name, index) => `${index + 1}. ${name}`).join("\n"),
+    ui.ButtonSet.OK_CANCEL
+  );
 
-
+  if (result.getSelectedButton() === ui.Button.OK) {
+    const selectedIndex = parseInt(result.getResponseText()) - 1;
+    if (selectedIndex >= 0 && selectedIndex < institutions.length) {
+      return institutions[selectedIndex];
     }
-    if (!agreementData) {
-      throw new Error("Failed to create agreement");
-    }
-    console.log({ agreementData });
+  }
+  return null;
+}
 
-
-  const data = goCardlessRequest<{
-    id: string;
-    status: string;
-  }>("/api/v2/requisitions/", {
+function createAgreementAndRequisition(spreadsheet: GoogleAppsScript.Spreadsheet.Spreadsheet, accessToken: string, institution: { id: string; name: string }) {
+  const agreementData = goCardlessRequest<{ id: string }>("/api/v2/agreements/enduser/", {
     method: "post",
     headers: {
-      Authorization: "Bearer " + accessToken,
+      Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     },
     payload: JSON.stringify({
-      institution_id: text,
-      redirect: spreadsheet.getUrl(),
-      agreement: agreementData?.id,
+      institution_id: institution.id,
+      max_historical_days: 90,
+      access_valid_for_days: 90,
+      access_scope: ["balances", "details", "transactions"],
     }),
   });
 
-  console.log({ data });
+  if (!agreementData || !agreementData.id) {
+    throw new Error("Failed to create agreement");
+  }
 
-  requisitionsSheet.appendRow([data.id, data.status, text]);
+  const requisitionData = goCardlessRequest<{
+    id: string;
+    status: string;
+    link: string;
+  }>("/api/v2/requisitions/", {
+    method: "post",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    payload: JSON.stringify({
+      institution_id: institution.id,
+      redirect: spreadsheet.getUrl(),
+      agreement: agreementData.id,
+    }),
+  });
 
-  const htmlOutput = Object.assign(
-    HtmlService.createTemplate(
-      'Go to <a target="_blank" href="<?= data.link ?>">this link</a> to authenticate your account.<br>Once you\'re done come back here and you will be able to load your account transactions.<br>If the link doesnt work you can copy it and paste it in your browser:<pre><a target="_blank" href="<?=data.link?>"><?=data.link?></a></pre>'
-    ),
-    { data }
+  // Store requisition data
+  let requisitionsSheet = spreadsheet.getSheetByName("GoCardlessRequisitions");
+  if (!requisitionsSheet) {
+    requisitionsSheet = spreadsheet.insertSheet("GoCardlessRequisitions");
+    requisitionsSheet.appendRow(["ID", "Status", "Institution ID", "Institution Name"]);
+  }
+  requisitionsSheet.appendRow([requisitionData.id, requisitionData.status, institution.id, institution.name]);
+
+  // Show authentication link to user
+  const htmlOutput = HtmlService.createHtmlOutput(
+    `<p>Go to <a href="${requisitionData.link}" target="_blank">this link</a> to authenticate your account.</p>` +
+    `<p>Once done, you'll be able to load your account transactions.</p>`
   )
-    .evaluate()
     .setWidth(450)
     .setHeight(250);
-    ui.showModalDialog(htmlOutput, "Authenticate with your bank");
-  }
+
+  SpreadsheetApp.getUi().showModalDialog(htmlOutput, "Authenticate with your bank");
 }

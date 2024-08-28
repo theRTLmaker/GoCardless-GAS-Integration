@@ -1,17 +1,15 @@
-export { goCardlessRequest, getAccessToken, showSelectionPrompt };
+const CONFIG_SHEET_NAME = "GoCardlessData";
+const SECRET_ID = "Secret ID";
+const SECRET_KEY = "Secret Key";
 
-export const CONFIG_SHEET_NAME = "GoCardlessData";
-export const SECRET_ID = "Secret ID";
-export const SECRET_KEY = "Secret Key";
-
-export const INSTITUTIONS_SHEET_NAME = "GoCardlessInstitutions";
-export const REQUISITIONS_SHEET_NAME = "GoCardlessRequisitions";
-export const ACCOUNTS_SHEET_NAME = "GoCardlessAccounts";
+const INSTITUTIONS_SHEET_NAME = "GoCardlessInstitutions";
+const REQUISITIONS_SHEET_NAME = "GoCardlessRequisitions";
+const ACCOUNTS_SHEET_NAME = "GoCardlessAccounts";
 
 
 let config: [string, string][];
 
-function goCardlessRequest<T extends {}>(
+export function goCardlessRequest<T extends {}>(
   url: string,
   { headers, ...options }: GoogleAppsScript.URL_Fetch.URLFetchRequestOptions
 ): T {
@@ -42,7 +40,7 @@ function goCardlessRequest<T extends {}>(
   return data;
 }
 
-function getAccessToken() {
+export function getAccessToken() {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   const configSheet = spreadsheet.getSheetByName("GoCardlessData");
 
@@ -148,52 +146,4 @@ function getReferenceRanges(
     });
     return acc;
   }, {} as Record<string, GoogleAppsScript.Spreadsheet.Range>);
-}
-
-function showSelectionPrompt(values: string[], onSelect: (selection: string) => void, title = 'Select an Option') {
-  const ui = SpreadsheetApp.getUi();
-  let html = '<html><body>';
-  html += '<form id="myForm">';
-  html += '<label>Select an option:</label><br><br>';
-
-  // Populate the form with radio buttons
-  values.forEach((value, i) => {
-    html += `<input type="radio" id="option${i}" name="selection" value="${value}">`;
-    html += `<label for="option${i}">${value}</label><br>`;
-  });
-
-  html += '<br><input type="button" value="Okay" onclick="submitSelection();" />';
-  html += '</form>';
-  html += '<script>';
-  html += 'function getSelectedValue() {';
-  html += '  const radios = document.getElementsByName("selection");';
-  html += '  for (let i = 0; i < radios.length; i++) {';
-  html += '    if (radios[i].checked) {';
-  html += '      return radios[i].value;';
-  html += '    }';
-  html += '  }';
-  html += '  return null;';
-  html += '}';
-  html += 'function submitSelection() {';
-  html += '  const selection = getSelectedValue();';
-  html += '  if (selection) {';
-  html += '    google.script.run.withSuccessHandler(() => google.script.host.close()).processSelection(selection);';
-  html += '  } else {';
-  html += '    alert("Please select an option.");';
-  html += '  }';
-  html += '}';
-  html += '</script>';
-  html += '</body></html>';
-
-  const htmlOutput = HtmlService.createHtmlOutput(html)
-    .setWidth(400)
-    .setHeight(400);
-
-  // Show the dialog
-  ui.showModalDialog(htmlOutput, title);
-
-  // Set up the callback function
-  this.processSelection = (selection: string) => {
-    onSelect(selection);
-  };
 }
