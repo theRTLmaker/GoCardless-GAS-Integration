@@ -20,9 +20,9 @@
 // }
 
 function onOpen() {
-    var ui = SpreadsheetApp.getUi();
+    const ui = SpreadsheetApp.getUi();
     ui.createMenu('GoCardless')
-        .addItem("Initialise", "initialise")
-        .addItem("Link an account", "linkAccount")
-        .addToUi();
+      .addItem('Link Account', 'linkAccount')
+      .addItem('Fetch Accounts', 'fetchAccounts')
+      .addToUi();
   }

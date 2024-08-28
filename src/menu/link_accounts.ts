@@ -69,6 +69,23 @@ function showInstitutionSelectionPrompt(ui: GoogleAppsScript.Base.Ui, institutio
 }
 
 function createAgreementAndRequisition(spreadsheet: GoogleAppsScript.Spreadsheet.Spreadsheet, accessToken: string, institution: { id: string; name: string }) {
+  const ui = SpreadsheetApp.getUi();
+  const scriptProperties = PropertiesService.getScriptProperties();
+  const existingRequisitionId = scriptProperties.getProperty('LAST_REQUISITION_ID');
+
+  if (existingRequisitionId) {
+    const response = ui.alert(
+      'Existing Account Link',
+      'There is already an existing account link. Do you want to create a new one?',
+      ui.ButtonSet.YES_NO
+    );
+
+    if (response !== ui.Button.YES) {
+      ui.alert('Operation cancelled. You can use the existing link to fetch accounts.');
+      return;
+    }
+  }
+
   const agreementData = goCardlessRequest<{ id: string }>("/api/v2/agreements/enduser/", {
     method: "post",
     headers: {
@@ -87,6 +104,8 @@ function createAgreementAndRequisition(spreadsheet: GoogleAppsScript.Spreadsheet
     throw new Error("Failed to create agreement");
   }
 
+  Logger.log(`agreementData: ${JSON.stringify(agreementData)}`);
+
   const requisitionData = goCardlessRequest<{
     id: string;
     status: string;
@@ -104,21 +123,18 @@ function createAgreementAndRequisition(spreadsheet: GoogleAppsScript.Spreadsheet
     }),
   });
 
-  // Store requisition data
-  let requisitionsSheet = spreadsheet.getSheetByName("GoCardlessRequisitions");
-  if (!requisitionsSheet) {
-    requisitionsSheet = spreadsheet.insertSheet("GoCardlessRequisitions");
-    requisitionsSheet.appendRow(["ID", "Status", "Institution ID", "Institution Name"]);
-  }
-  requisitionsSheet.appendRow([requisitionData.id, requisitionData.status, institution.id, institution.name]);
+  Logger.log(`requisitionData: ${JSON.stringify(requisitionData)}`);
+
+  // Store new requisition ID in script properties
+  scriptProperties.setProperty('LAST_REQUISITION_ID', requisitionData.id);
 
   // Show authentication link to user
   const htmlOutput = HtmlService.createHtmlOutput(
     `<p>Go to <a href="${requisitionData.link}" target="_blank">this link</a> to authenticate your account.</p>` +
-    `<p>Once done, you'll be able to load your account transactions.</p>`
+    `<p>Once done, close this dialog and use the "Fetch Accounts" option from the menu to load your account data.</p>`
   )
     .setWidth(450)
     .setHeight(250);
 
-  SpreadsheetApp.getUi().showModalDialog(htmlOutput, "Authenticate with your bank");
+  ui.showModalDialog(htmlOutput, "Authenticate with your bank");
 }
