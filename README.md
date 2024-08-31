@@ -12,6 +12,10 @@ This project integrates Google Apps Script with the GoCardless API to create a p
 - Fetch and update transaction data automatically
 - Categorize transactions
 - Generate financial reports and insights
+- User-friendly bank selection interface with search functionality
+- Customizable column mapping for transaction data
+- Error handling and rate limit management
+- Support for both booked and pending transactions
 
 ## Setup
 
@@ -27,12 +31,34 @@ This project integrates Google Apps Script with the GoCardless API to create a p
    - Initialize the integration
    - Link bank accounts
    - Fetch transaction data
+   - Customize column mappings
+
+## Bank Account Linking
+
+1. Select "Link Account" from the GoCardless menu
+2. Enter the country code for your bank
+3. Use the search function to find your bank in the list
+4. Click on your bank to start the linking process
+5. Follow the on-screen instructions to complete the authentication
+
+## Customizing Column Mappings
+
+1. Select "Configure Column Mappings" from the GoCardless menu
+2. Use the dialog to select which transaction fields to include
+3. Specify the column letter for each selected field
+4. Save your customized mapping
 
 ## GoCardless API Setup
 
 1. Sign up for a GoCardless account
 2. Obtain your API credentials (Secret ID and Secret Key)
 3. Use these credentials when initializing the integration in Google Sheets
+
+## Error Handling
+
+- The script includes robust error handling for API requests
+- Rate limit errors are managed with appropriate waiting periods
+- User-friendly error messages are displayed for common issues
 
 ## Contributing
 
