@@ -1,436 +1,261 @@
-const FETCH_PERIOD_START_DAYS_AGO = 90;
-const FETCH_PERIOD_LENGTH_DAYS = 90;
-
-const MAX_EXECUTION_TIME = 1000 * 300; // 5 mins max
-
 function loadTransactions() {
-  documentLock(_loadTransactions);
-}
-function _loadTransactions() {
-  // console.log('loadTransactions')
-
-  const scriptStart = new Date();
-
-  const ui = SpreadsheetApp.getUi();
-
-  function needGracefulShutdown() {
-    if (+new Date() - +scriptStart > MAX_EXECUTION_TIME) {
-      ui.alert(
-        "Script running out of time but there's still data to process. Please run the script again"
-      );
-      return true;
-    }
-    return false;
-  }
-
-  const accessToken = getAccessToken();
-
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  let requisitionsSheet = spreadsheet.getSheetByName(REQUISITIONS_SHEET_NAME);
+  const requisitionsSheet = spreadsheet.getSheetByName(REQUISITIONS_SHEET_NAME);
 
   if (!requisitionsSheet) {
-    ui.alert(
-      "Please link an account before using this command",
-      ui.ButtonSet.OK
-    );
+    throw new Error(`Sheet "${REQUISITIONS_SHEET_NAME}" not found. Please run the initialization first.`);
+  }
+
+  scriptLock(_loadTransactions);
+}
+
+function _loadTransactions() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const accountData = getAccountDataFromSpreadsheet(spreadsheet);
+
+  if (accountData.length === 0) {
+    SpreadsheetApp.getActive().toast("No accounts found. Please link and fetch accounts first.", "Load Transactions");
     return;
   }
 
-  let accountsSheet = spreadsheet.getSheetByName(ACCOUNTS_SHEET_NAME);
+  const accessToken = getAccessToken();
+  let totalTransactions = 0;
+  let processedAccounts = 0;
+  let rateLimitedAccounts = 0;
 
-  const requisitions = requisitionsSheet.getSheetValues(
-    2,
-    1,
-    requisitionsSheet.getLastRow() - 1,
-    3
-  );
-
-  let accounts = getAccounts(accountsSheet);
-
-  const {
-    v_ApprovedSymbol,
-    v_PendingSymbol,
-    v_BalanceAdjustment,
-    v_StartingBalance,
-    v_BreakSymbol,
-  } = getReferenceValues(spreadsheet);
-
-  const {
-    trx_Dates,
-    trx_Uuids,
-    trx_Accounts,
-    trx_Categories,
-    trx_Statuses,
-    trx_Inflows,
-  } = getReferenceRanges(spreadsheet);
-
-  function getFirstEmptyRow(range: GoogleAppsScript.Spreadsheet.Range) {
-    return (
-      (parseInt(
-        Object.entries(range.getValues())
-          .reverse()
-          .find(([index, [cell]]) => cell !== "")?.[0]
-      ) + 1 || 0) + range.getRow()
-    );
-    // return parseInt(Object.entries(range.getValues()).find(
-    //   ([index, [cell]]) => cell === ''
-    // )?.[0]) + range.getRow()
-  }
-
-  const prevRowNumber = getFirstEmptyRow(trx_Dates);
-  const txnSheet = trx_Dates.getSheet();
-  // txnSheet.activate()
-
-  let txnRowNumber = prevRowNumber;
-
-  const prevUuids = trx_Uuids.getValues().map(([cell]) => cell);
-
-  let warned_about_name = true; // FIXME - false
-
-  const prevAccountRows: string[] = trx_Accounts
-    .getValues()
-    .map(([cell]) => cell);
-  const prevDateRows: Date[] = trx_Dates.getValues().map(([cell]) => cell);
-  const prevStatusRows: string[] = trx_Statuses
-    .getValues()
-    .map(([cell]) => cell);
-
-  for (const { id: accountId, name: accountName, institutionId } of accounts) {
-    if (needGracefulShutdown()) return;
-    let account, balances;
+  accountData.forEach(({ accountId, sheetName }) => {
     try {
-      ({ account } = goCardlessRequest<any>(
-        "/api/v2/accounts/" + encodeURIComponent(accountId) + "/details/",
-        {
-          headers: {
-            Authorization: "Bearer " + accessToken,
-          },
-        }
-      ));
-      ({ balances } = goCardlessRequest<{
-        balances: {
-          balanceAmount: { amount: string };
-          referenceDate: string;
-          balanceType: string;
-        }[];
-      }>("/api/v2/accounts/" + encodeURIComponent(accountId) + "/balances/", {
-        headers: {
-          Authorization: "Bearer " + accessToken,
-        },
-      }));
-    } catch (error) {
-      // Update account status
-      updateAccount(accountsSheet, {
-        id: accountId,
-        status: "ERROR",
-        message: error.detail || error.message,
-      });
-      continue;
-    }
-
-    let balance = balances.find(
-      ({ balanceType }) => balanceType === "interimCleared"
-    );
-    if (!balance)
-      balance = balances.find(
-        ({ balanceType }) => balanceType === "interimBooked"
-      );
-    if (!balance)
-      balance = balances.find(
-        ({ balanceType }) => balanceType === "interimAvailable"
-      );
-    if (!balance)
-      balance = balances.find(({ balanceType }) => balanceType === "expected");
-
-    // console.log(balances, 'Selected: ', balance?.balanceType);
-
-    updateAccount(accountsSheet, {
-      id: accountId,
-      lastBalance: balance?.balanceAmount.amount,
-      lastBalanceDate: balance?.referenceDate,
-    });
-
-    if (!accountName) {
-      // accountsSheet.activate();
-      if (!warned_about_name) {
-        warned_about_name = true;
-        SpreadsheetApp.getUi().alert(
-          "An account doesn't have a name and is skipped. Please make sure to give it a name in the Nordigen Accounts sheet then try fetching again.",
-          SpreadsheetApp.getUi().ButtonSet.OK
-        );
-      }
-      continue;
-    }
-
-    const accountDates = prevDateRows
-      .filter(
-        (_, index) =>
-          prevAccountRows[index] === accountName &&
-          (prevStatusRows[index] === v_ApprovedSymbol ||
-            prevStatusRows[index] === v_BreakSymbol)
-      )
-      .filter((v) => !!v);
-    // .filter((v,idx,arr) => arr.indexOf(v)===idx); // Dedupe will only work if this is cast to string
-
-    let max_historical_days = FETCH_PERIOD_START_DAYS_AGO;
-    {
-      console.log("account", account);
-      // Check for earlist access date
-      const institutionsSheet = spreadsheet.getSheetByName(
-        INSTITUTIONS_SHEET_NAME
-      );
-      const institutionIdx = institutionsSheet
-        .getRange(2, 1, institutionsSheet.getLastRow(), 1)
-        .getValues()
-        .map(([cell]) => cell)
-        .indexOf(institutionId);
-
-      if (institutionIdx) {
-        max_historical_days =
-          institutionsSheet.getRange(institutionIdx + 2, 3, 1, 1).getValue() ||
-          FETCH_PERIOD_START_DAYS_AGO;
-      }
-    }
-
-    // start & end date
-    const today = formatDate(new Date());
-    const startDate = accountDates.length
-      ? formatDate(new Date(Math.max(...accountDates.map((d) => +d))))
-      : formatDate(addDays(new Date(), -max_historical_days));
-    const endDate = minDate(
-      formatDate(addDays(parseDate(startDate), FETCH_PERIOD_LENGTH_DAYS)),
-      today
-    );
-
-    const { transactions } = goCardlessRequest<any>(
-      "/api/v2/accounts/" +
-        encodeURIComponent(accountId) +
-        "/transactions/?date_from=" +
-        encodeURIComponent(startDate) +
-        "&date_to=" +
-        encodeURIComponent(endDate),
-      {
-        headers: {
-          Authorization: "Bearer " + accessToken,
-        },
-      }
-    );
-
-    for (const transaction of transactions.booked.slice().reverse()) {
-      // if a transaction is seen before, update it
-      let currentTxnRow;
-      let prevIndex = transaction.transactionId
-        ? prevUuids.indexOf(transaction.transactionId)
-        : -1;
-      if (prevIndex >= 0) {
-        currentTxnRow = prevIndex + trx_Uuids.getRow();
-        // console.log('txn exists')
+      const transactions = fetchTransactionsForAccount(accessToken, accountId);
+      if (transactions === null) {
+        // Rate limit error occurred
+        rateLimitedAccounts++;
+      } else if (transactions && transactions.length > 0) {
+        storeTransactions(spreadsheet, accountId, sheetName, transactions);
+        totalTransactions += transactions.length;
+        processedAccounts++;
       } else {
-        currentTxnRow = txnRowNumber++;
-        // console.log('new txn')
+        Logger.log(`No transactions found for account ${accountId}`);
+        processedAccounts++;
       }
-
-      if (!transaction.transactionId) {
-        console.log("transaction with no id", transaction);
-      }
-
-      // console.log('Inserting balance at row ', txnRowNumber)
-      // console.log({transaction})
-
-      updateTransaction(spreadsheet, currentTxnRow, {
-        date: transaction.valueDate || transaction.bookingDate,
-        amount: transaction.transactionAmount.amount,
-        account: accountName,
-        status: v_ApprovedSymbol as string,
-        memo: [
-          transaction.transactionAmount.amount > 0
-            ? transaction.debtorName
-            : transaction.creditorName,
-          transaction.remittanceInformationUnstructured,
-        ]
-          .filter(Boolean)
-          .join(" – "),
-        uuid: transaction.transactionId,
-      });
+    } catch (error) {
+      Logger.log(`Error processing account ${accountId}: ${error.message}`);
+      processedAccounts++;
     }
+  });
 
-    if (needGracefulShutdown()) return;
+  const resultMessage = `Processed ${processedAccounts} accounts. ` +
+    `Loaded ${totalTransactions} transactions. ` +
+    `${rateLimitedAccounts} accounts rate limited.`;
+  SpreadsheetApp.getActive().toast(resultMessage, "Load Transactions Complete", 10);
+}
 
-    if (balance) {
-      // console.log('Inserting balance at row ', txnRowNumber)
-      // FIXME - starting balance and balance adjustments
-
-      if (
-        endDate === today &&
-        (!balance.referenceDate || balance.referenceDate === today)
-      ) {
-        // Check for an already existing starting balance, create one or do a balance adjustment
-        const inflowRows: number[] = trx_Inflows
-          .getValues()
-          .map(([cell]) => cell);
-        const accountRows: string[] = trx_Accounts
-          .getValues()
-          .map(([cell]) => cell);
-        const dateRows: Date[] = trx_Dates.getValues().map(([cell]) => cell);
-        const categoryRows: string[] = trx_Categories
-          .getValues()
-          .map(([cell]) => cell);
-
-        const expectedBalance = parseFloat(balance.balanceAmount.amount);
-        let startingBalance = inflowRows.find(
-          (_, idx) =>
-            accountRows[idx] === accountName &&
-            categoryRows[idx] === v_StartingBalance
-        );
-
-        let currentBalance;
-        {
-          const calculationsSheet = spreadsheet.getSheetByName("Calculations");
-          const calculationsAccounts = calculationsSheet
-            .getRange("A7:A37")
-            .getValues()
-            .map(([cell]) => cell);
-          const calculationsBalances = calculationsSheet
-            .getRange("B7:B37")
-            .getValues()
-            .map(([cell]) => cell);
-
-          let accountIdx = calculationsAccounts.indexOf(accountName);
-
-          currentBalance = parseFloat(calculationsBalances[accountIdx]);
-        }
-
-        if (
-          !Number.isNaN(currentBalance) &&
-          expectedBalance !== currentBalance
-        ) {
-          if (startingBalance != null) {
-            // Account already has a starting balance, make an adjustment
-            updateTransaction(spreadsheet, txnRowNumber++, {
-              date: balance.referenceDate || today,
-              category: v_BalanceAdjustment as string,
-              amount: expectedBalance - currentBalance,
-              account: accountName,
-              status: v_ApprovedSymbol as string,
-            });
-          } else {
-            // Create a starting balance for the account
-            let firstTransactionDate =
-              dateRows
-                .filter((_, index) => accountRows[index] === accountName)
-                .map(formatDate)
-                .sort()[0] || today;
-
-            updateTransaction(spreadsheet, txnRowNumber++, {
-              date: firstTransactionDate,
-              category: v_StartingBalance as string,
-              amount: expectedBalance - currentBalance,
-              account: accountName,
-              status: v_ApprovedSymbol as string,
-            });
-          }
-        }
-        console.log({
-          currentBalance,
-          startingBalance,
-          newBalance: balance.balanceAmount.amount,
-        });
-      }
-    }
-
-    {
-      // Check for most recent transactions, or insert a break if they're too old
-      const accountRows = trx_Accounts.getValues().map(([cell]) => cell);
-      const dateRows = trx_Dates.getValues().map(([cell]) => cell);
-
-      let lastTransactionDate = dateRows
-        .filter((_, index) => accountRows[index] === accountName)
-        .map(formatDate)
-        .sort()
-        .reverse()[0];
-      console.log({ lastTransactionDate, startDate, endDate });
-
-      if (
-        !lastTransactionDate ||
-        (lastTransactionDate === startDate && today !== endDate)
-      ) {
-        // Insert a break, to avoid requesting the same period when there are no transactions
-        updateTransaction(spreadsheet, txnRowNumber++, {
-          date: endDate,
-          account: accountName,
-          status: v_BreakSymbol as string,
-          memo: "Sync marker. Please don't remove",
-        });
-      }
-    }
-
-    updateAccount(accountsSheet, {
-      id: accountId,
-      lastFetched: endDate,
-    });
+function getAccountDataFromSpreadsheet(spreadsheet: GoogleAppsScript.Spreadsheet.Spreadsheet): Array<{ accountId: string; sheetName: string }> {
+  const sheet = spreadsheet.getSheetByName("GoCardlessRequisitions");
+  if (!sheet) {
+    Logger.log("GoCardlessRequisitions sheet not found");
+    SpreadsheetApp.getUi().alert("GoCardlessRequisitions sheet not found. Please link and fetch accounts first.");
+    return [];
   }
 
-  const newRowNumber = getFirstEmptyRow(trx_Dates);
+  const dataRange = sheet.getDataRange();
+  const values = dataRange.getValues();
 
-  if (prevRowNumber !== newRowNumber) {
-    txnSheet
-      .getRange(prevRowNumber, 2, newRowNumber - prevRowNumber, 7)
-      .activate();
+  // Assuming the account IDs are in the 5th column (index 4) and the Sheet Names are in the 6th column (index 5)
+  const accountData = values.slice(1)
+    .map(row => ({ accountId: row[4], sheetName: row[5] }));
+
+  // Check if any account ID doesn't have a sheet name
+  const missingSheetName = accountData.find(data => data.accountId && !data.sheetName);
+  if (missingSheetName) {
+    SpreadsheetApp.getUi().alert(`Account ID ${missingSheetName.accountId} doesn't have a sheet name. Please provide sheet names for all accounts.`);
+    return [];
+  }
+
+  const validAccountData = accountData.filter(data => data.accountId && data.sheetName);
+
+  if (validAccountData.length === 0) {
+    SpreadsheetApp.getUi().alert("No valid accounts found. Please link and fetch accounts first.");
+    return [];
+  }
+
+  Logger.log(`Found ${validAccountData.length} valid accounts with both account IDs and sheet names in the spreadsheet`);
+  return validAccountData;
+}
+
+interface Transaction {
+  transactionId?: string;
+  bookingDate?: string;
+  valueDate: string;
+  transactionAmount: {
+    amount: string;
+    currency: string;
+  };
+  remittanceInformationUnstructured: string;
+  bankTransactionCode?: string;
+  debtorName?: string;
+  debtorAccount?: {
+    iban: string;
+  };
+}
+
+function fetchTransactionsForAccount(accessToken: string, accountId: string): Transaction[] | null {
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const dateFrom = thirtyDaysAgo.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+
+  const url = `/api/v2/accounts/${accountId}/transactions/?date_from=${dateFrom}`;
+  Logger.log(`Fetching transactions for account ${accountId} from ${dateFrom}`);
+
+  try {
+    const response = goCardlessRequest<{
+      transactions: {
+        booked: Transaction[],
+        pending: Transaction[]
+      }
+    } | {
+      summary: string;
+      detail: string;
+      status_code: number
+    }>(url, {
+      method: "get",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    // Logger.log(`Raw response for account ${accountId}: ${JSON.stringify(response)}`);
+
+    if ('status_code' in response && response.status_code === 429) {
+      const errorMessage = `Rate limit exceeded for account ${accountId}: ${response.summary}. ${response.detail}`;
+      Logger.log(errorMessage);
+      SpreadsheetApp.getActive().toast(errorMessage, "Rate Limit Error", 10);
+      return null; // Indicate rate limit error
+    }
+
+    if (!('transactions' in response) || !response.transactions) {
+      Logger.log(`Invalid response for account ${accountId}: No transactions found in the response`);
+      return [];
+    }
+
+    const bookedTransactions = response.transactions.booked || [];
+    const pendingTransactions = response.transactions.pending || [];
+    const allTransactions = [...bookedTransactions, ...pendingTransactions];
+
+    Logger.log(`Fetched ${bookedTransactions.length} booked and ${pendingTransactions.length} pending transactions for account ${accountId}`);
+    return allTransactions;
+  } catch (error) {
+    Logger.log(`Error fetching transactions for account ${accountId}: ${error.message}`);
+    throw error; // Rethrow the error to be caught in _loadTransactions
   }
 }
 
-function updateTransaction(
-  spreadsheet: GoogleAppsScript.Spreadsheet.Spreadsheet,
-  rowNumber: number,
-  {
-    date,
-    category,
-    amount,
-    account,
-    status,
-    memo,
-    uuid,
-  }: Partial<{
-    date: string;
-    category: string;
-    amount: number;
-    account: string;
-    status: string;
-    memo: string;
-    uuid: string;
-  }>
-) {
-  const {
-    trx_Dates,
-    trx_Categories,
-    trx_Inflows,
-    trx_Outflows,
-    trx_Accounts,
-    trx_Statuses,
-    trx_Memos,
-    trx_Uuids,
-  } = getReferenceRanges(spreadsheet);
+function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spreadsheet, accountId: string, sheetName: string, transactions: Transaction[]) {
+    let sheet = spreadsheet.getSheetByName(sheetName);
+    if (!sheet) {
+      sheet = spreadsheet.insertSheet(sheetName);
+    }
 
-  const txnSheet = trx_Dates.getSheet();
+    const columnMappings = getCustomColumnMappings();
+    const headers = Object.values(columnMappings);
 
-  // some values should not be overriden unless specified (memo and category)
+    // Add headers if the sheet is empty
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(headers);
+    }
 
-  txnSheet.getRange(rowNumber, trx_Dates.getColumn(), 1, 1).setValue(date);
-  if (category)
-    txnSheet
-      .getRange(rowNumber, trx_Categories.getColumn(), 1, 1)
-      .setValue(category);
-  txnSheet
-    .getRange(rowNumber, trx_Inflows.getColumn(), 1, 1)
-    .setValue(amount >= 0 ? amount : "");
-  txnSheet
-    .getRange(rowNumber, trx_Outflows.getColumn(), 1, 1)
-    .setValue(amount < 0 ? Math.abs(amount) : "");
-  txnSheet
-    .getRange(rowNumber, trx_Accounts.getColumn(), 1, 1)
-    .setValue(account);
-  txnSheet.getRange(rowNumber, trx_Statuses.getColumn(), 1, 1).setValue(status);
-  if (memo)
-    txnSheet.getRange(rowNumber, trx_Memos.getColumn(), 1, 1).setValue(memo);
-  txnSheet.getRange(rowNumber, trx_Uuids.getColumn(), 1, 1).setValue(uuid);
+    const transactionRows = transactions.map(t =>
+      Object.keys(columnMappings).map(key => {
+        const value = key.split('.').reduce((obj, k) => obj && obj[k], t);
+        return value !== undefined ? value : '';
+      })
+    );
+
+    sheet.getRange(sheet.getLastRow() + 1, 1, transactionRows.length, headers.length).setValues(transactionRows);
+    sheet.autoResizeColumns(1, headers.length);
+
+    Logger.log(`Stored ${transactions.length} transactions for account ${accountId} in sheet ${sheetName}`);
+  }
+
+function getCustomColumnMappings(): Record<string, string> {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG_SHEET_NAME);
+
+  if (!sheet) {
+    throw new Error(`Sheet "${CONFIG_SHEET_NAME}" not found. Please run the initialization first.`);
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < COLUMN_CONFIG_START_ROW) {
+    return {}; // No column config data yet
+  }
+
+  const data = sheet.getRange(COLUMN_CONFIG_START_ROW, 1, lastRow - COLUMN_CONFIG_START_ROW + 1, 2).getValues();
+  return Object.fromEntries(data);
+}
+
+function showColumnMappingDialog() {
+  const currentMappings = getCustomColumnMappings();
+
+  // Convert the mappings to a JSON string
+  const mappingsJson = JSON.stringify(currentMappings);
+
+  // Read the HTML file content
+  let htmlContent = HtmlService.createHtmlOutputFromFile('src/html/ColumnMappingDialog').getContent();
+
+  // Replace a placeholder in the HTML with the mappings JSON
+  htmlContent = htmlContent.replace('{{SAVED_MAPPINGS}}', mappingsJson);
+
+  // Create a new HtmlOutput with the modified content
+  const html = HtmlService.createHtmlOutput(htmlContent)
+      .setWidth(450)
+      .setHeight(600);
+
+  SpreadsheetApp.getUi().showModalDialog(html, 'Configure Transaction Columns');
+}
+
+function saveColumnMappings(mappings: { [key: string]: string }) {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  let configSheet = spreadsheet.getSheetByName("TransactionConfig");
+  if (!configSheet) {
+    configSheet = spreadsheet.insertSheet("TransactionConfig");
+  }
+
+  const data = Object.entries(mappings).map(([key, value]) => [key, value]);
+  configSheet.clear();
+  configSheet.getRange(1, 1, data.length, 2).setValues(data);
+}
+
+// This function would be called from your HTML dialog
+function updateColumnMappings(mappings: Record<string, string>) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG_SHEET_NAME);
+
+  if (!sheet) {
+    throw new Error(`Sheet "${CONFIG_SHEET_NAME}" not found. Please run the initialization first.`);
+  }
+
+  // Clear existing column config (starting from the third row)
+  const lastRow = Math.max(sheet.getLastRow(), COLUMN_CONFIG_START_ROW);
+  if (lastRow >= COLUMN_CONFIG_START_ROW) {
+    sheet.getRange(COLUMN_CONFIG_START_ROW, 1, lastRow - COLUMN_CONFIG_START_ROW + 1, 2).clear();
+  }
+
+  // Save new config
+  const configData = Object.entries(mappings).map(([field, column]) => [field, column]);
+  sheet.getRange(COLUMN_CONFIG_START_ROW, 1, configData.length, 2).setValues(configData);
+}
+
+function getTransactionFieldsWithDescriptions(): Array<{field: string, description: string, tooltip: string}> {
+  return [
+    { field: 'transactionId', description: 'Transaction ID', tooltip: 'A unique identifier for each transaction.' },
+    { field: 'bookingDate', description: 'Booking Date', tooltip: 'The date when the transaction was officially recorded by the bank.' },
+    { field: 'valueDate', description: 'Value Date', tooltip: 'The date when the funds were actually debited or credited to the account.' },
+    { field: 'transactionAmount.amount', description: 'Amount', tooltip: 'The monetary value of the transaction.' },
+    { field: 'transactionAmount.currency', description: 'Currency', tooltip: 'The currency in which the transaction amount is denominated.' },
+    { field: 'remittanceInformationUnstructured', description: 'Remittance Info', tooltip: 'Additional information about the transaction, such as a payment reference or note.' },
+    { field: 'bankTransactionCode', description: 'Transaction Code', tooltip: 'A code used by the bank to categorize the type of transaction.' },
+    { field: 'debtorName', description: 'Debtor Name', tooltip: 'The name of the person or entity making the payment (for incoming transactions).' },
+    { field: 'debtorAccount.iban', description: 'Debtor IBAN', tooltip: 'The International Bank Account Number of the debtor\'s account.' }
+  ];
 }

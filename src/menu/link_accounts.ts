@@ -54,15 +54,21 @@ function showInstitutionSelectionPrompt(ui: GoogleAppsScript.Base.Ui, institutio
   const options = institutions.map(inst => inst.name);
   const result = ui.prompt(
     "Select an Institution",
-    "Enter the number of the institution you want to select:\n" +
+    "Enter the number of the institution you want to select, or type 'sandbox' for a sandbox bank:\n" +
     options.map((name, index) => `${index + 1}. ${name}`).join("\n"),
     ui.ButtonSet.OK_CANCEL
   );
 
   if (result.getSelectedButton() === ui.Button.OK) {
-    const selectedIndex = parseInt(result.getResponseText()) - 1;
+    const input = result.getResponseText().trim().toLowerCase();
+    if (input === 'sandbox') {
+      return { id: 'SANDBOXFINANCE_SFIN0000', name: 'sandbox_bank' };
+    }
+    const selectedIndex = parseInt(input) - 1;
     if (selectedIndex >= 0 && selectedIndex < institutions.length) {
       return institutions[selectedIndex];
+    } else {
+      ui.alert('Invalid selection. Please enter a valid number or "sandbox".');
     }
   }
   return null;

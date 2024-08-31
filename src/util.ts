@@ -1,6 +1,7 @@
 const CONFIG_SHEET_NAME = "GoCardlessData";
 const SECRET_ID = "Secret ID";
 const SECRET_KEY = "Secret Key";
+const COLUMN_CONFIG_START_ROW = 3; // Start storing column config from the third row
 
 const INSTITUTIONS_SHEET_NAME = "GoCardlessInstitutions";
 const REQUISITIONS_SHEET_NAME = "GoCardlessRequisitions";
@@ -23,7 +24,7 @@ export function goCardlessRequest<T extends {}>(
   });
   let data;
   try {
-    Logger.log(request.getContentText());
+    Logger.log(`request: ${request.getContentText()}`);
     data = JSON.parse(request.getContentText());
   } catch (error) {
     throw new Error(

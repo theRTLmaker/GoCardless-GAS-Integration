@@ -24,5 +24,7 @@ function onOpen() {
     ui.createMenu('GoCardless')
       .addItem('Link Account', 'linkAccount')
       .addItem('Fetch Accounts', 'fetchAccounts')
+      .addItem('Load Transactions', 'loadTransactions')
+      .addItem('Configure Transaction Columns', 'showColumnMappingDialog')
       .addToUi();
   }
