@@ -3,6 +3,7 @@ function testStoreTransactions() {
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
     const testAccountId = "TEST_ACCOUNT_123";
     const testSheetName = "TestTransactions";
+    const testBankName = "TestBank";
 
     // Create a test sheet if it doesn't exist
     let sheet = spreadsheet.getSheetByName(testSheetName);
@@ -25,7 +26,7 @@ function testStoreTransactions() {
     const testTransactions = generateTestTransactions();
 
     // Call storeTransactions with test data
-    storeTransactions(spreadsheet, testAccountId, testSheetName, testTransactions);
+    storeTransactions(spreadsheet, testAccountId, testSheetName, testTransactions, testBankName);
 
     // Log completion message
     Logger.log(`Test completed. Check the "${testSheetName}" sheet for results.`);

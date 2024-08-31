@@ -1,4 +1,4 @@
-export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spreadsheet, accountId: string, sheetName: string, transactions: Transaction[]) {
+export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spreadsheet, accountId: string, sheetName: string, transactions: Transaction[], customName: string) {
   let sheet = spreadsheet.getSheetByName(sheetName);
   const isNewSheet = !sheet;
   if (isNewSheet) {
@@ -46,6 +46,7 @@ export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spre
 
   if (newTransactions.length > 0) {
     const isSignalColumnSelected = 'transactionSignal' in columnMappings;
+    const isCustomAccountNameSelected = 'customAccountName' in columnMappings;
 
     const dataToAppend = newTransactions.map(transaction => {
       const row = new Array(maxColumnIndex).fill('');
@@ -54,6 +55,8 @@ export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spre
         if (field === 'transactionSignal') {
           const amount = parseFloat(getNestedValue(transaction, 'transactionAmount.amount'));
           value = amount >= 0 ? '+' : '-';
+        } else if (field === 'customAccountName') {
+          value = customName;
         } else {
           value = getNestedValue(transaction, field);
         }
@@ -78,7 +81,7 @@ export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spre
 
   sheet.autoResizeColumns(1, maxColumnIndex);
 
-  Logger.log(`Stored ${newTransactions.length} new transactions for account ${accountId} in sheet ${sheetName}`);
+  Logger.log(`Stored ${newTransactions.length} new transactions for account ${accountId} (${customName}) in sheet ${sheetName}`);
 }
 
 export function getCustomColumnMappings(): Record<string, string> {
@@ -167,7 +170,8 @@ export function getTransactionFieldsWithDescriptions(): Array<{field: string, de
     { field: 'remittanceInformationUnstructured', description: 'Remittance Info', tooltip: 'Additional information about the transaction, such as a payment reference or note.' },
     { field: 'bankTransactionCode', description: 'Transaction Code', tooltip: 'A code used by the bank to categorize the type of transaction.' },
     { field: 'debtorName', description: 'Debtor Name', tooltip: 'The name of the person or entity making the payment (for incoming transactions).' },
-    { field: 'debtorAccount.iban', description: 'Debtor IBAN', tooltip: 'The International Bank Account Number of the debtor\'s account.' }
+    { field: 'debtorAccount.iban', description: 'Debtor IBAN', tooltip: 'The International Bank Account Number of the debtor\'s account.' },
+    { field: 'customAccountName', description: 'Custom Account Name', tooltip: 'The custom name assigned to this account in the Requisitions sheet.' }
   ];
 }
 

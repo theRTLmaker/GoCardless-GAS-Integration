@@ -67,10 +67,10 @@ function fetchAccounts() {
     requisitionData: { id: string; status: string },
     accountIds: string[]
   ) {
-    let requisitionsSheet = spreadsheet.getSheetByName("GoCardlessRequisitions");
+    let requisitionsSheet = spreadsheet.getSheetByName(REQUISITIONS_SHEET_NAME);
     if (!requisitionsSheet) {
-      requisitionsSheet = spreadsheet.insertSheet("GoCardlessRequisitions");
-      requisitionsSheet.appendRow(["ID", "Status", "Institution ID", "Institution Name", "Accounts", "Sheet Name"]);
+      requisitionsSheet = spreadsheet.insertSheet(REQUISITIONS_SHEET_NAME);
+      requisitionsSheet.appendRow(["ID", "Status", "Institution ID", "Institution Name", "Accounts", "Sheet Name", "Custom Account Name"]);
     }
 
     // Find the institution data from the existing rows
@@ -95,12 +95,13 @@ function fetchAccounts() {
         institutionId,
         institutionName,
         accountId,
-        ""  // Empty Sheet Name column
+        "",  // Empty Sheet Name column
+        ""   // Empty Custom Account Name column
       ]);
     });
 
     Logger.log(`Stored requisition and account data for ${accountIds.length} accounts`);
 
     // Optionally, you can auto-resize columns to fit the content
-    requisitionsSheet.autoResizeColumns(1, 6);
+    requisitionsSheet.autoResizeColumns(1, 7);
   }
