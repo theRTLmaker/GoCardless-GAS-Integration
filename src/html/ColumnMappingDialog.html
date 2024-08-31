@@ -3,10 +3,19 @@
   <head>
     <base target="_top">
     <style>
-      body {
+      body, html {
+        height: 100%;
+        margin: 0;
+        padding: 0;
         font-family: Arial, sans-serif;
-        padding: 20px;
         background-color: #f5f5f5;
+      }
+      .container {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        padding: 20px;
+        box-sizing: border-box;
       }
       h2 {
         color: #333;
@@ -16,12 +25,20 @@
         color: #666;
         margin-bottom: 20px;
       }
+      #mappingForm {
+        flex-grow: 1;
+        overflow-y: auto;
+        margin-bottom: 20px;
+        padding: 10px;
+        background-color: #f5f5f5;
+        border-radius: 4px;
+      }
       .field-row {
         display: flex;
         align-items: center;
+        padding: 10px;
         margin-bottom: 10px;
         background-color: #fff;
-        padding: 10px;
         border-radius: 4px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
       }
@@ -31,7 +48,7 @@
         align-items: center;
       }
       .field-label label {
-        margin-left: 10px; /* Add this line to create space after the checkbox */
+        margin-left: 10px;
       }
       .column-input {
         width: 40px;
@@ -44,8 +61,13 @@
       .column-input.invalid {
         border-color: red;
       }
+      .button-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px;
+      }
       button {
-        margin-top: 20px;
         padding: 10px 20px;
         background-color: #4CAF50;
         color: white;
@@ -119,6 +141,10 @@
       }
       .required-field {
         font-weight: bold;
+      }
+      #duplicateWarning {
+        color: #d9534f;
+        margin-left: 10px;
       }
     </style>
     <script>
@@ -210,7 +236,36 @@
           input.placeholder = savedMapping || 'Col';
         }
 
+        checkDuplicateColumns();
         updateSaveButtonState();
+      }
+
+      function checkDuplicateColumns() {
+        const inputs = document.querySelectorAll('.column-input');
+        const columnMap = new Map();
+        const duplicates = [];
+
+        inputs.forEach(input => {
+          const value = input.value.toUpperCase();
+          if (value) {
+            if (columnMap.has(value)) {
+              duplicates.push(value);
+            } else {
+              columnMap.set(value, input.id.replace('column_', ''));
+            }
+          }
+        });
+
+        const saveButton = document.getElementById('saveButton');
+        const duplicateWarning = document.getElementById('duplicateWarning');
+
+        if (duplicates.length > 0) {
+          saveButton.disabled = true;
+          duplicateWarning.style.display = 'inline';
+          duplicateWarning.textContent = `Columns ${duplicates.join(', ')} are assigned to multiple fields.`;
+        } else {
+          duplicateWarning.style.display = 'none';
+        }
       }
 
       function updateSaveButtonState() {
@@ -229,6 +284,9 @@
 
         // Disable save button if no checkboxes are selected, or if any selected checkbox has an empty or invalid column input, or if transactionId is invalid
         saveButton.disabled = checkedInputs.length === 0 || invalidInputs.length > 0 || emptyInputs.length > 0 || !isTransactionIdValid;
+
+        // Check for duplicates
+        checkDuplicateColumns();
       }
 
       function saveMappings() {
@@ -242,12 +300,22 @@
 
         const form = document.getElementById('mappingForm');
         const mappings = {};
+        const usedColumns = new Set();
 
         for (let div of form.getElementsByClassName('field-row')) {
           const checkbox = div.querySelector('input[type="checkbox"]');
           const columnInput = div.querySelector('.column-input');
           if (checkbox.checked && columnInput.value) {
-            mappings[checkbox.name] = columnInput.value.toUpperCase();
+            const column = columnInput.value.toUpperCase();
+            if (usedColumns.has(column)) {
+              alert(`Duplicate column ${column} detected. Please ensure each field has a unique column.`);
+              saveButton.disabled = false;
+              saveButton.textContent = 'Save';
+              spinner.style.display = 'none';
+              return;
+            }
+            mappings[checkbox.name] = column;
+            usedColumns.add(column);
           }
         }
 
@@ -274,14 +342,34 @@
       function getSavedMapping(field) {
         return savedMappings[field] || '';
       }
+
+      function getTransactionFieldsWithDescriptions() {
+        return [
+          { field: 'transactionId', description: 'Transaction ID', tooltip: 'A unique identifier for each transaction.' },
+          { field: 'bookingDate', description: 'Booking Date', tooltip: 'The date when the transaction was officially recorded by the bank.' },
+          { field: 'valueDate', description: 'Value Date', tooltip: 'The date when the funds were actually debited or credited to the account.' },
+          { field: 'transactionAmount.amount', description: 'Amount', tooltip: 'The monetary value of the transaction.' },
+          { field: 'transactionSignal', description: 'Signal', tooltip: 'The sign (+ or -) of the transaction amount.' }, // New field
+          { field: 'transactionAmount.currency', description: 'Currency', tooltip: 'The currency in which the transaction amount is denominated.' },
+          { field: 'remittanceInformationUnstructured', description: 'Remittance Info', tooltip: 'Additional information about the transaction, such as a payment reference or note.' },
+          { field: 'bankTransactionCode', description: 'Transaction Code', tooltip: 'A code used by the bank to categorize the type of transaction.' },
+          { field: 'debtorName', description: 'Debtor Name', tooltip: 'The name of the person or entity making the payment (for incoming transactions).' },
+          { field: 'debtorAccount.iban', description: 'Debtor IBAN', tooltip: 'The International Bank Account Number of the debtor\'s account.' }
+        ];
+      }
     </script>
   </head>
   <body onload="loadMappings()">
-    <p>Select the fields to display and specify their column letters. Transaction ID is required.</p>
-    <form id="mappingForm">
-      <!-- Fields will be dynamically populated here -->
-    </form>
-    <button id="saveButton" onclick="saveMappings()" style="margin-top: 20px;">Save</button>
-    <div id="spinner" class="spinner" style="display: none;"></div>
+    <div class="container">
+      <p>Select the fields to display and specify their column letters. Transaction ID is required.</p>
+      <form id="mappingForm">
+        <!-- Fields will be dynamically populated here -->
+      </form>
+      <div class="button-container">
+        <button id="saveButton" onclick="saveMappings()">Save</button>
+        <div id="spinner" class="spinner" style="display: none;"></div>
+        <span id="duplicateWarning"></span>
+      </div>
+    </div>
   </body>
 </html>

@@ -45,11 +45,28 @@ export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spre
   const newTransactions = transactions.filter(transaction => !existingTransactionIds.has(transaction.transactionId));
 
   if (newTransactions.length > 0) {
+    const isSignalColumnSelected = 'transactionSignal' in columnMappings;
+
     const dataToAppend = newTransactions.map(transaction => {
       const row = new Array(maxColumnIndex).fill('');
       Object.entries(columnIndexes).forEach(([field, index]) => {
-        const value = getNestedValue(transaction, field);
+        let value: any;
+        if (field === 'transactionSignal') {
+          const amount = parseFloat(getNestedValue(transaction, 'transactionAmount.amount'));
+          value = amount >= 0 ? '+' : '-';
+        } else {
+          value = getNestedValue(transaction, field);
+        }
+
         if (value !== undefined) {
+          if (field === 'transactionAmount.amount') {
+            const amount = parseFloat(value);
+            if (isSignalColumnSelected) {
+              value = Math.abs(amount).toString(); // Store absolute value if signal column is selected
+            } else {
+              value = amount.toString(); // Keep the original value (with sign) if signal column is not selected
+            }
+          }
           row[index - 1] = value;
         }
       });
@@ -121,6 +138,13 @@ export function updateColumnMappings(mappings: Record<string, string>) {
     throw new Error(`Sheet "${CONFIG_SHEET_NAME}" not found. Please run the initialization first.`);
   }
 
+  // Check for duplicate columns
+  const columns = Object.values(mappings);
+  const uniqueColumns = new Set(columns);
+  if (columns.length !== uniqueColumns.size) {
+    throw new Error("Duplicate columns detected. Each field must have a unique column.");
+  }
+
   // Clear existing column config (starting from the third row)
   const lastRow = Math.max(sheet.getLastRow(), COLUMN_CONFIG_START_ROW);
   if (lastRow >= COLUMN_CONFIG_START_ROW) {
@@ -138,6 +162,7 @@ export function getTransactionFieldsWithDescriptions(): Array<{field: string, de
     { field: 'bookingDate', description: 'Booking Date', tooltip: 'The date when the transaction was officially recorded by the bank.' },
     { field: 'valueDate', description: 'Value Date', tooltip: 'The date when the funds were actually debited or credited to the account.' },
     { field: 'transactionAmount.amount', description: 'Amount', tooltip: 'The monetary value of the transaction.' },
+    { field: 'transactionSignal', description: 'Signal', tooltip: 'The sign (+ or -) of the transaction amount.' }, // New field
     { field: 'transactionAmount.currency', description: 'Currency', tooltip: 'The currency in which the transaction amount is denominated.' },
     { field: 'remittanceInformationUnstructured', description: 'Remittance Info', tooltip: 'Additional information about the transaction, such as a payment reference or note.' },
     { field: 'bankTransactionCode', description: 'Transaction Code', tooltip: 'A code used by the bank to categorize the type of transaction.' },
