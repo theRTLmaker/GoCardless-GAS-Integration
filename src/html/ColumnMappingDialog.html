@@ -30,6 +30,9 @@
         display: flex;
         align-items: center;
       }
+      .field-label label {
+        margin-left: 10px; /* Add this line to create space after the checkbox */
+      }
       .column-input {
         width: 40px;
         text-align: center;
@@ -114,6 +117,9 @@
       @-webkit-keyframes spin {
         to { -webkit-transform: rotate(360deg); }
       }
+      .required-field {
+        font-weight: bold;
+      }
     </style>
     <script>
       const savedMappings = {{SAVED_MAPPINGS}};
@@ -141,6 +147,12 @@
           label.htmlFor = `check_${field}`;
           label.textContent = description;
 
+          if (field === 'transactionId') {
+            checkbox.checked = true;
+            checkbox.disabled = true;
+            label.textContent += ' (Required)';
+          }
+
           const tooltipSpan = document.createElement('span');
           tooltipSpan.className = 'tooltip';
           tooltipSpan.textContent = '?';
@@ -162,9 +174,9 @@
           columnInput.addEventListener('input', validateColumnInput);
 
           // Pre-select checkbox and set value if it exists in saved mappings
-          if (savedMappings[field]) {
+          if (savedMappings[field] || field === 'transactionId') {
             checkbox.checked = true;
-            columnInput.value = savedMappings[field];
+            columnInput.value = savedMappings[field] || '';
           }
 
           div.appendChild(labelDiv);
@@ -211,8 +223,12 @@
           return !columnInput.value;
         });
 
-        // Disable save button if no checkboxes are selected, or if any selected checkbox has an empty or invalid column input
-        saveButton.disabled = checkedInputs.length === 0 || invalidInputs.length > 0 || emptyInputs.length > 0;
+        // Ensure transactionId is selected and has a valid column
+        const transactionIdInput = document.getElementById('column_transactionId');
+        const isTransactionIdValid = transactionIdInput && transactionIdInput.value && !transactionIdInput.classList.contains('invalid');
+
+        // Disable save button if no checkboxes are selected, or if any selected checkbox has an empty or invalid column input, or if transactionId is invalid
+        saveButton.disabled = checkedInputs.length === 0 || invalidInputs.length > 0 || emptyInputs.length > 0 || !isTransactionIdValid;
       }
 
       function saveMappings() {
@@ -261,7 +277,7 @@
     </script>
   </head>
   <body onload="loadMappings()">
-    <p>Select the fields to display and specify their column letters.</p>
+    <p>Select the fields to display and specify their column letters. Transaction ID is required.</p>
     <form id="mappingForm">
       <!-- Fields will be dynamically populated here -->
     </form>

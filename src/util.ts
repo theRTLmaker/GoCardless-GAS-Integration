@@ -43,7 +43,7 @@ export function goCardlessRequest<T extends {}>(
 
 export function getAccessToken() {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-  const configSheet = spreadsheet.getSheetByName("GoCardlessData");
+  const configSheet = spreadsheet.getSheetByName(CONFIG_SHEET_NAME);
 
   if (!configSheet) {
     throw new Error(
