@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      h2 {
+        color: #333;
+        margin-bottom: 15px;
+      }
+      p {
+        color: #666;
+        margin-bottom: 20px;
+      }
+      .bank-list {
+        max-height: 400px;
+        overflow-y: auto;
+      }
+      .bank-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 10px;
+        background-color: #fff;
+        padding: 10px;
+        border-radius: 4px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        cursor: pointer;
+        transition: background-color 0.3s;
+      }
+      .bank-item:hover {
+        background-color: #f0f0f0;
+      }
+      .bank-item img {
+        width: 24px;
+        height: 24px;
+        margin-right: 10px;
+      }
+      .sandbox-option {
+        margin-top: 20px;
+        padding: 10px;
+        background-color: #e0f7fa;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .spinner {
+        display: none;
+        width: 40px;
+        height: 40px;
+        border: 4px solid rgba(0,0,0,.1);
+        border-radius: 50%;
+        border-top: 4px solid #3498db;
+        animation: spin 1s linear infinite;
+        margin: 20px auto;
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      .loading .bank-list, .loading .sandbox-option {
+        display: none;
+      }
+      .loading .spinner {
+        display: block;
+      }
+
+      #searchContainer {
+        margin-bottom: 15px;
+      }
+      #searchField {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 14px;
+        box-sizing: border-box;
+      }
+      .hidden {
+        display: none;
+      }
+    </style>
+    <script>
+      function selectBank(bankId, bankName) {
+        showLoading();
+        google.script.run
+          .withSuccessHandler(closeDialog)
+          .withFailureHandler(handleError)
+          .selectBankAndContinue(bankId, bankName);
+      }
+
+      function selectSandbox() {
+        showLoading();
+        google.script.run
+          .withSuccessHandler(closeDialog)
+          .withFailureHandler(handleError)
+          .selectBankAndContinue('SANDBOXFINANCE_SFIN0000', 'Sandbox Bank');
+      }
+
+      function showLoading() {
+        document.body.classList.add('loading');
+        document.getElementById('loadingText').style.display = 'block';
+      }
+
+      function handleError(error) {
+        document.body.classList.remove('loading');
+        document.getElementById('loadingText').style.display = 'none';
+        alert('An error occurred: ' + error.message);
+      }
+
+      function closeDialog() {
+        google.script.host.close();
+      }
+
+      function filterBanks() {
+        const searchTerm = document.getElementById('searchField').value.toLowerCase();
+        const bankItems = document.getElementsByClassName('bank-item');
+
+        for (let item of bankItems) {
+          const bankName = item.textContent.toLowerCase();
+          if (bankName.includes(searchTerm)) {
+            item.classList.remove('hidden');
+          } else {
+            item.classList.add('hidden');
+          }
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <p>Click on a bank to connect or choose the sandbox option:</p>
+    <div id="searchContainer">
+      <input type="text" id="searchField" placeholder="Search banks..." oninput="filterBanks()">
+    </div>
+    <div class="bank-list" id="bankList">
+      <? for (var i = 0; i < institutions.length; i++) { ?>
+        <div class="bank-item" onclick="selectBank('<?= institutions[i].id ?>', '<?= institutions[i].name ?>')">
+          <? if (institutions[i].logo) { ?>
+            <img src="<?= institutions[i].logo ?>" alt="<?= institutions[i].name ?> logo">
+          <? } ?>
+          <span><?= institutions[i].name ?></span>
+        </div>
+      <? } ?>
+    </div>
+    <div class="sandbox-option" onclick="selectSandbox()">
+      <strong>Use Sandbox Bank</strong> (for testing purposes)
+    </div>
+    <div class="spinner"></div>
+    <p id="loadingText" style="display: none; text-align: center;">Connecting to bank...</p>
+  </body>
+</html>

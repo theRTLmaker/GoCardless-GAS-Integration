@@ -28,20 +28,39 @@ function _linkAccount() {
     return;
   }
 
-  // Show institution selection prompt
-  const selectedInstitution = showInstitutionSelectionPrompt(ui, institutions);
+  // Show bank selection dialog
+  showBankSelectionDialog(institutions);
+}
 
-  if (!selectedInstitution) {
-    return;
+function showBankSelectionDialog(institutions: Array<{ id: string; name: string; logo?: string }>) {
+  try {
+    const htmlTemplate = HtmlService.createTemplateFromFile('src/html/BankSelectionDialog');
+
+    Logger.log(`Passing ${institutions.length} institutions to the HTML template`);
+
+    // Pass the institutions to the template
+    htmlTemplate.institutions = institutions;
+
+    const html = htmlTemplate.evaluate()
+      .setWidth(450)
+      .setHeight(600);
+
+    SpreadsheetApp.getUi().showModalDialog(html, 'Select a Bank');
+  } catch (error) {
+    Logger.log(`Error in showBankSelectionDialog: ${error.message}`);
+    SpreadsheetApp.getUi().alert(`An error occurred while displaying the bank selection dialog: ${error.message}`);
   }
+}
 
-  // Create agreement and requisition
-  createAgreementAndRequisition(spreadsheet, accessToken, selectedInstitution);
+function selectBankAndContinue(bankId: string, bankName: string) {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const accessToken = getAccessToken();
+  createAgreementAndRequisition(spreadsheet, accessToken, { id: bankId, name: bankName });
 }
 
 function fetchInstitutions(accessToken: string, countryCode: string) {
   const url = `/api/v2/institutions/?country=${countryCode}`;
-  return goCardlessRequest<Array<{ id: string; name: string }>>(url, {
+  return goCardlessRequest<Array<{ id: string; name: string; logo?: string }>>(url, {
     method: "get",
     headers: {
       Authorization: `Bearer ${accessToken}`,
