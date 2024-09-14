@@ -26,5 +26,6 @@ function onOpen() {
       .addItem('Fetch Accounts', 'fetchAccounts')
       .addItem('Load Transactions', 'loadTransactions')
       .addItem('Configure Transaction Columns', 'showColumnMappingDialog')
+      .addItem('Sort Transactions and Update Balances', 'sortAndUpdateBalance')
       .addToUi();
   }

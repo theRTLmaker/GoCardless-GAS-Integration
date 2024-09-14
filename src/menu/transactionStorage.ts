@@ -119,8 +119,6 @@ export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spre
   // Update running balance
   updateRunningBalance(sheet, columnMappings);
 
-  sheet.autoResizeColumns(1, maxColumnIndex);
-
   Logger.log(`Stored ${newTransactions.length} new transactions for account ${accountId} (${customName}) in sheet ${sheetName}`);
 }
 
@@ -307,5 +305,19 @@ function updateRunningBalance(sheet: GoogleAppsScript.Spreadsheet.Sheet, columnM
     runningBalances[accountName] += amount;
     const columnIndex = customAccountColumns[accountName];
     sheet.getRange(i + 2, columnIndex).setValue(runningBalances[accountName]);
+  }
+}
+
+export function sortAndUpdateBalance() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const activeSheet = ss.getActiveSheet();
+  const columnMappings = getCustomColumnMappings();
+
+  if (activeSheet.getName().startsWith('Database')) {
+    sortTransactionsByBookingDate(activeSheet, columnMappings);
+    updateRunningBalance(activeSheet, columnMappings);
+    SpreadsheetApp.getUi().alert('Transactions sorted and balances updated successfully.');
+  } else {
+    SpreadsheetApp.getUi().alert('Please select a transaction sheet (starting with "Database") to sort and update balances.');
   }
 }

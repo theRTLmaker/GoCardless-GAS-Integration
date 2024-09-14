@@ -1,6 +1,6 @@
 function fetchTransactionsForAccount(accessToken: string, accountId: string): Transaction[] | null {
   const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - FETCHING_DAYS);
   const dateFrom = thirtyDaysAgo.toISOString().split('T')[0]; // Format: YYYY-MM-DD
 
   const url = `/api/v2/accounts/${accountId}/transactions/?date_from=${dateFrom}`;

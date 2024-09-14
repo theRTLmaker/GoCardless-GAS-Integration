@@ -2,6 +2,7 @@ const CONFIG_SHEET_NAME = "GoCardlessData";
 const SECRET_ID = "Secret ID";
 const SECRET_KEY = "Secret Key";
 const COLUMN_CONFIG_START_ROW = 3; // Start storing column config from the third row
+const FETCHING_DAYS = 60;
 
 const INSTITUTIONS_SHEET_NAME = "GoCardlessInstitutions";
 const REQUISITIONS_SHEET_NAME = "GoCardlessRequisitions";
