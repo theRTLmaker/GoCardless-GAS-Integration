@@ -32,21 +32,46 @@ export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spre
     sheet.getRange(1, 1, 1, maxColumnIndex).setValues([headerRow]);
   }
 
-  const lastRow = sheet.getLastRow();
+  const bookingDateColumn = columnMappings['bookingDate'];
+  const bookingDateIndex = columnLetterToIndex(bookingDateColumn) - 1;
   const transactionIdColumn = columnMappings['transactionId'];
   const transactionIdIndex = columnLetterToIndex(transactionIdColumn) - 1;
 
+  // Find the oldest date in the new transactions
+  const oldestNewDate = transactions.reduce((oldest, transaction) => {
+    const bookingDate = new Date(transaction.bookingDate);
+    return bookingDate < oldest ? bookingDate : oldest;
+  }, new Date());
+
+  // Find the row with the oldest date that is the same or newer than the oldest new transaction
+  let startRow = 2;
+  if (sheet.getLastRow() > 1) {
+    const dateValues = sheet.getRange(2, bookingDateIndex + 1, sheet.getLastRow() - 1, 1).getValues();
+    for (let i = 0; i < dateValues.length; i++) {
+      const sheetDate = new Date(dateValues[i][0]);
+      if (sheetDate >= oldestNewDate) {
+        startRow = i + 1; // +1 because we start from row 2 and i is 0-indexed
+        break;
+      }
+    }
+  }
+
   let existingTransactionIds: Set<string> = new Set();
-  if (lastRow > 1) {
-    const existingIds = sheet.getRange(2, transactionIdIndex + 1, lastRow - 1, 1).getValues().flat();
+  if (startRow <= sheet.getLastRow()) {
+    const existingIds = sheet.getRange(startRow, transactionIdIndex + 1, sheet.getLastRow() - startRow + 1, 1).getValues().flat();
     existingTransactionIds = new Set(existingIds.filter(id => id !== ""));
   }
 
   const newTransactions = transactions.filter(transaction => !existingTransactionIds.has(transaction.transactionId));
 
+  // Delete pending transactions
+  deletePendingTransactions(sheet, columnMappings);
+
   if (newTransactions.length > 0) {
+    const lastRow = sheet.getLastRow();
     const isSignalColumnSelected = 'transactionSignal' in columnMappings;
     const isCustomAccountNameSelected = 'customAccountName' in columnMappings;
+    const isTransactionStatusSelected = 'transactionStatus' in columnMappings;
 
     const dataToAppend = newTransactions.map(transaction => {
       const row = new Array(maxColumnIndex).fill('');
@@ -57,6 +82,8 @@ export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spre
           value = amount >= 0 ? '+' : '-';
         } else if (field === 'customAccountName') {
           value = customName;
+        } else if (field === 'transactionStatus') {
+          value = transaction.isPending ? 'p' : '';
         } else {
           value = getNestedValue(transaction, field);
         }
@@ -79,9 +106,35 @@ export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spre
     sheet.getRange(lastRow + 1, 1, dataToAppend.length, maxColumnIndex).setValues(dataToAppend);
   }
 
+  // Sort transactions by Booking Date
+  sortTransactionsByBookingDate(sheet, columnMappings);
+
+  // Update running balance
+  updateRunningBalance(sheet, columnMappings);
+
   sheet.autoResizeColumns(1, maxColumnIndex);
 
   Logger.log(`Stored ${newTransactions.length} new transactions for account ${accountId} (${customName}) in sheet ${sheetName}`);
+}
+
+function deletePendingTransactions(sheet: GoogleAppsScript.Spreadsheet.Sheet, columnMappings: Record<string, string>) {
+  const transactionStatusColumn = columnMappings['transactionStatus'];
+  if (!transactionStatusColumn) return;
+
+  const transactionStatusIndex = columnLetterToIndex(transactionStatusColumn);
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) {
+    Logger.log("Sheet is empty or only contains the header.");
+    return;
+  }
+  const range = sheet.getRange(2, transactionStatusIndex, lastRow - 1, 1);
+  const values = range.getValues();
+
+  for (let i = values.length - 1; i >= 0; i--) {
+    if (values[i][0] === 'p') {
+      sheet.deleteRow(i + 2); // +2 to account for header row and 0-based index
+    }
+  }
 }
 
 export function getCustomColumnMappings(): Record<string, string> {
@@ -165,13 +218,14 @@ export function getTransactionFieldsWithDescriptions(): Array<{field: string, de
     { field: 'bookingDate', description: 'Booking Date', tooltip: 'The date when the transaction was officially recorded by the bank.' },
     { field: 'valueDate', description: 'Value Date', tooltip: 'The date when the funds were actually debited or credited to the account.' },
     { field: 'transactionAmount.amount', description: 'Amount', tooltip: 'The monetary value of the transaction.' },
-    { field: 'transactionSignal', description: 'Signal', tooltip: 'The sign (+ or -) of the transaction amount.' }, // New field
+    { field: 'transactionSignal', description: 'Signal', tooltip: 'The sign (+ or -) of the transaction amount.' },
     { field: 'transactionAmount.currency', description: 'Currency', tooltip: 'The currency in which the transaction amount is denominated.' },
     { field: 'remittanceInformationUnstructured', description: 'Remittance Info', tooltip: 'Additional information about the transaction, such as a payment reference or note.' },
     { field: 'bankTransactionCode', description: 'Transaction Code', tooltip: 'A code used by the bank to categorize the type of transaction.' },
     { field: 'debtorName', description: 'Debtor Name', tooltip: 'The name of the person or entity making the payment (for incoming transactions).' },
     { field: 'debtorAccount.iban', description: 'Debtor IBAN', tooltip: 'The International Bank Account Number of the debtor\'s account.' },
-    { field: 'customAccountName', description: 'Custom Account Name', tooltip: 'The custom name assigned to this account in the Requisitions sheet.' }
+    { field: 'customAccountName', description: 'Custom Account Name', tooltip: 'The custom name assigned to this account in the Requisitions sheet.' },
+    { field: 'transactionStatus', description: 'Transaction Status', tooltip: 'Indicates if the transaction is pending ("p") or booked (blank).' } // New field
   ];
 }
 
@@ -185,4 +239,66 @@ function columnLetterToIndex(column: string): number {
     index = index * 26 + column.charCodeAt(i) - 64;
   }
   return index;
+}
+
+function sortTransactionsByBookingDate(sheet: GoogleAppsScript.Spreadsheet.Sheet, columnMappings: Record<string, string>) {
+  const bookingDateColumn = columnMappings['bookingDate'];
+  if (!bookingDateColumn) return;
+
+  const bookingDateIndex = columnLetterToIndex(bookingDateColumn);
+  const lastRow = sheet.getLastRow();
+  const range = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn());
+  range.sort({ column: bookingDateIndex, ascending: true });
+}
+
+function updateRunningBalance(sheet: GoogleAppsScript.Spreadsheet.Sheet, columnMappings: Record<string, string>) {
+  const amountColumn = columnMappings['transactionAmount.amount'];
+  const customAccountNameColumn = columnMappings['customAccountName'];
+  const signalColumn = columnMappings['transactionSignal'];
+  if (!amountColumn || !customAccountNameColumn) return;
+
+  const amountIndex = columnLetterToIndex(amountColumn);
+  const customAccountNameIndex = columnLetterToIndex(customAccountNameColumn);
+  const signalIndex = signalColumn ? columnLetterToIndex(signalColumn) : null;
+  const lastRow = sheet.getLastRow();
+  const range = sheet.getRange(2, amountIndex, lastRow - 1, 1);
+  const values = range.getValues();
+
+  const customAccountNames = sheet.getRange(2, customAccountNameIndex, lastRow - 1, 1).getValues().flat();
+  const signals = signalIndex ? sheet.getRange(2, signalIndex, lastRow - 1, 1).getValues().flat() : null;
+
+  const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const customAccountColumns: { [key: string]: number } = {};
+
+  customAccountNames.forEach(name => {
+    if (!customAccountColumns[name]) {
+      let index = headerRow.indexOf(name) + 1;
+      if (index === 0) {
+        index = headerRow.length + 1;
+        sheet.getRange(1, index).setValue(name);
+      }
+      customAccountColumns[name] = index;
+    }
+  });
+
+  // Delete all balances from the Account Columns
+  Object.values(customAccountColumns).forEach(columnIndex => {
+    sheet.getRange(2, columnIndex, lastRow - 1, 1).clearContent();
+  });
+
+  const runningBalances: { [key: string]: number } = {};
+
+  for (let i = 0; i < values.length; i++) {
+    let amount = parseFloat(values[i][0]);
+    const accountName = customAccountNames[i];
+    if (!runningBalances[accountName]) {
+      runningBalances[accountName] = 0;
+    }
+    if (signals) {
+      amount = signals[i] === '-' ? -Math.abs(amount) : Math.abs(amount);
+    }
+    runningBalances[accountName] += amount;
+    const columnIndex = customAccountColumns[accountName];
+    sheet.getRange(i + 2, columnIndex).setValue(runningBalances[accountName]);
+  }
 }

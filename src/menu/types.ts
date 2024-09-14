@@ -1,5 +1,5 @@
 export interface Transaction {
-  transactionId?: string;
+  transactionId: string;
   bookingDate?: string;
   valueDate: string;
   transactionAmount: {
@@ -12,6 +12,7 @@ export interface Transaction {
   debtorAccount?: {
     iban: string;
   };
+  isPending: boolean; // New field
 }
 
 // Add any other shared types here

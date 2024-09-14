@@ -27,8 +27,8 @@ function fetchTransactionsForAccount(accessToken: string, accountId: string): Tr
     Logger.log(`Raw response for account ${accountId}: ${JSON.stringify(response)}`);
 
     if ('transactions' in response && response.transactions) {
-      const bookedTransactions = response.transactions.booked || [];
-      const pendingTransactions = response.transactions.pending || [];
+      const bookedTransactions = (response.transactions.booked || []).map(t => ({ ...t, isPending: false }));
+      const pendingTransactions = (response.transactions.pending || []).map(t => ({ ...t, isPending: true }));
       const allTransactions = [...bookedTransactions, ...pendingTransactions];
 
       Logger.log(`Fetched ${bookedTransactions.length} booked and ${pendingTransactions.length} pending transactions for account ${accountId}`);

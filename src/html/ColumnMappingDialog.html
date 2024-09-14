@@ -173,7 +173,7 @@
           label.htmlFor = `check_${field}`;
           label.textContent = description;
 
-          if (field === 'transactionId') {
+          if (field === 'transactionId' || field === 'transactionStatus') {
             checkbox.checked = true;
             checkbox.disabled = true;
             label.textContent += ' (Required)';
@@ -200,7 +200,7 @@
           columnInput.addEventListener('input', validateColumnInput);
 
           // Pre-select checkbox and set value if it exists in saved mappings
-          if (savedMappings[field] || field === 'transactionId') {
+          if (savedMappings[field] || field === 'transactionId' || field === 'transactionStatus') {
             checkbox.checked = true;
             columnInput.value = savedMappings[field] || '';
           }
@@ -278,12 +278,14 @@
           return !columnInput.value;
         });
 
-        // Ensure transactionId is selected and has a valid column
+        // Ensure transactionId and transactionStatus are selected and have valid columns
         const transactionIdInput = document.getElementById('column_transactionId');
+        const transactionStatusInput = document.getElementById('column_transactionStatus');
         const isTransactionIdValid = transactionIdInput && transactionIdInput.value && !transactionIdInput.classList.contains('invalid');
+        const isTransactionStatusValid = transactionStatusInput && transactionStatusInput.value && !transactionStatusInput.classList.contains('invalid');
 
-        // Disable save button if no checkboxes are selected, or if any selected checkbox has an empty or invalid column input, or if transactionId is invalid
-        saveButton.disabled = checkedInputs.length === 0 || invalidInputs.length > 0 || emptyInputs.length > 0 || !isTransactionIdValid;
+        // Disable save button if no checkboxes are selected, or if any selected checkbox has an empty or invalid column input, or if transactionId or transactionStatus is invalid
+        saveButton.disabled = checkedInputs.length === 0 || invalidInputs.length > 0 || emptyInputs.length > 0 || !isTransactionIdValid || !isTransactionStatusValid;
 
         // Check for duplicates
         checkDuplicateColumns();
@@ -349,13 +351,14 @@
           { field: 'bookingDate', description: 'Booking Date', tooltip: 'The date when the transaction was officially recorded by the bank.' },
           { field: 'valueDate', description: 'Value Date', tooltip: 'The date when the funds were actually debited or credited to the account.' },
           { field: 'transactionAmount.amount', description: 'Amount', tooltip: 'The monetary value of the transaction.' },
-          { field: 'transactionSignal', description: 'Signal', tooltip: 'The sign (+ or -) of the transaction amount.' }, // New field
+          { field: 'transactionSignal', description: 'Signal', tooltip: 'The sign (+ or -) of the transaction amount.' },
           { field: 'transactionAmount.currency', description: 'Currency', tooltip: 'The currency in which the transaction amount is denominated.' },
           { field: 'remittanceInformationUnstructured', description: 'Remittance Info', tooltip: 'Additional information about the transaction, such as a payment reference or note.' },
           { field: 'bankTransactionCode', description: 'Transaction Code', tooltip: 'A code used by the bank to categorize the type of transaction.' },
           { field: 'debtorName', description: 'Debtor Name', tooltip: 'The name of the person or entity making the payment (for incoming transactions).' },
           { field: 'debtorAccount.iban', description: 'Debtor IBAN', tooltip: 'The International Bank Account Number of the debtor\'s account.' },
-          { field: 'customAccountName', description: 'Custom Account Name', tooltip: 'The custom name assigned to this account in the Requisitions sheet.' }
+          { field: 'customAccountName', description: 'Custom Account Name', tooltip: 'The custom name assigned to this account in the Requisitions sheet.' },
+          { field: 'transactionStatus', description: 'Transaction Status', tooltip: 'Indicates if the transaction is pending ("p") or booked (blank).' }
         ];
       }
     </script>

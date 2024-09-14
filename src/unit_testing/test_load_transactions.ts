@@ -83,7 +83,8 @@ function generateRandomTransaction(isPositive?: boolean): Transaction {
         debtorName: `Random Debtor ${transactionId.substring(0, 5)}`,
         debtorAccount: {
             iban: `DE${Math.floor(Math.random() * 1000000000000000000)}`
-        }
+        },
+        isPending: Math.random() < 0.5
     };
 }
 
