@@ -20,6 +20,7 @@ function fetchAccounts() {
     storeRequisitionAndAccountData(spreadsheet, { id: requisitionId, status: 'COMPLETED' }, accountIds);
 
     ui.alert(`Successfully fetched ${accountIds.length} accounts.`);
+    PropertiesService.getScriptProperties().deleteProperty('LAST_REQUISITION_ID');
   }
 
   function fetchAccountIds(accessToken: string, requisitionId: string): string[] {
