@@ -42,12 +42,13 @@ function generateTestTransactions(): Transaction[] {
             amount: "-50.00",
             currency: "EUR"
         },
-        remittanceInformationUnstructured: "Constant transaction",
+        remittanceInformationUnstructuredArray: ["Constant transaction"],
         bankTransactionCode: "PMNT",
-        debtorName: "John Doe",
+        creditorName: "John Doe", // Changed from debtorName to creditorName since amount is negative
         debtorAccount: {
             iban: "DE89370400440532013000"
-        }
+        },
+        isPending: false
     };
 
     const randomTransactions = [
@@ -70,6 +71,9 @@ function generateRandomTransaction(isPositive?: boolean): Transaction {
         amount = isPositive ? Math.random() * 500 : -Math.random() * 500;
     }
 
+    const isPositiveAmount = amount >= 0;
+    const randomName = `${isPositiveAmount ? 'Debtor' : 'Creditor'} ${Math.random().toString(36).substring(2, 8)}`;
+
     return {
         transactionId: transactionId,
         bookingDate: date,
@@ -78,9 +82,12 @@ function generateRandomTransaction(isPositive?: boolean): Transaction {
             amount: amount.toFixed(2),
             currency: "EUR"
         },
-        remittanceInformationUnstructured: `Random transaction ${transactionId}`,
+        remittanceInformationUnstructuredArray: [`Random transaction ${transactionId}`],
         bankTransactionCode: "PMNT",
-        debtorName: `Random Debtor ${transactionId.substring(0, 5)}`,
+        ...(isPositiveAmount
+            ? { debtorName: randomName }
+            : { creditorName: randomName }
+        ),
         debtorAccount: {
             iban: `DE${Math.floor(Math.random() * 1000000000000000000)}`
         },

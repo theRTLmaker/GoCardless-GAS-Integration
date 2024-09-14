@@ -1,18 +1,20 @@
 export interface Transaction {
   transactionId: string;
-  bookingDate?: string;
+  bookingDate: string;
   valueDate: string;
   transactionAmount: {
     amount: string;
     currency: string;
   };
-  remittanceInformationUnstructured: string;
-  bankTransactionCode?: string;
+  remittanceInformationUnstructuredArray?: string[];
+  bankTransactionCode: string;
   debtorName?: string;
-  debtorAccount?: {
+  creditorName?: string;
+  debtorAccount: {
     iban: string;
   };
-  isPending: boolean; // New field
+  isPending?: boolean;
+  // ... any other fields you might have
 }
 
 // Add any other shared types here

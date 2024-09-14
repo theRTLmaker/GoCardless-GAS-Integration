@@ -84,6 +84,13 @@ export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spre
           value = customName;
         } else if (field === 'transactionStatus') {
           value = transaction.isPending ? 'p' : '';
+        } else if (field === 'debtorName') {
+          // Replace debtorName with Merchant
+          const amount = parseFloat(getNestedValue(transaction, 'transactionAmount.amount'));
+          value = amount >= 0 ? transaction.debtorName : transaction.creditorName;
+        } else if (field === 'remittanceInformationUnstructured') {
+          // Join remittanceInformationUnstructuredArray
+          value = transaction.remittanceInformationUnstructuredArray?.join(' ') || '';
         } else {
           value = getNestedValue(transaction, field);
         }
@@ -220,12 +227,12 @@ export function getTransactionFieldsWithDescriptions(): Array<{field: string, de
     { field: 'transactionAmount.amount', description: 'Amount', tooltip: 'The monetary value of the transaction.' },
     { field: 'transactionSignal', description: 'Signal', tooltip: 'The sign (+ or -) of the transaction amount.' },
     { field: 'transactionAmount.currency', description: 'Currency', tooltip: 'The currency in which the transaction amount is denominated.' },
-    { field: 'remittanceInformationUnstructured', description: 'Remittance Info', tooltip: 'Additional information about the transaction, such as a payment reference or note.' },
+    { field: 'remittanceInformationUnstructuredArray', description: 'Additional Info', tooltip: 'Additional information about the transaction, such as a payment reference or note.' },
     { field: 'bankTransactionCode', description: 'Transaction Code', tooltip: 'A code used by the bank to categorize the type of transaction.' },
-    { field: 'debtorName', description: 'Debtor Name', tooltip: 'The name of the person or entity making the payment (for incoming transactions).' },
+    { field: 'debtorName', description: 'Merchant', tooltip: 'The merchant name for outgoing transactions or the debtor name for incoming transactions.' },
     { field: 'debtorAccount.iban', description: 'Debtor IBAN', tooltip: 'The International Bank Account Number of the debtor\'s account.' },
     { field: 'customAccountName', description: 'Custom Account Name', tooltip: 'The custom name assigned to this account in the Requisitions sheet.' },
-    { field: 'transactionStatus', description: 'Transaction Status', tooltip: 'Indicates if the transaction is pending ("p") or booked (blank).' } // New field
+    { field: 'transactionStatus', description: 'Transaction Status', tooltip: 'Indicates if the transaction is pending ("p") or booked (blank).' }
   ];
 }
 
