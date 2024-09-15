@@ -73,6 +73,12 @@ function generateRandomTransaction(isPositive?: boolean): Transaction {
 
     const isPositiveAmount = amount >= 0;
     const randomName = `${isPositiveAmount ? 'Debtor' : 'Creditor'} ${Math.random().toString(36).substring(2, 8)}`;
+    const randomInfo = `Additional Info ${Math.random().toString(36).substring(2, 8)}`;
+
+    const useAdditionalInfo = Math.random() < 0.5;
+    const useUnstructuredArray = Math.random() < 0.5;
+
+    const generateRandomInfoEntry = () => `Random transaction ${Math.random().toString(36).substring(2, 8)}`;
 
     return {
         transactionId: transactionId,
@@ -82,11 +88,16 @@ function generateRandomTransaction(isPositive?: boolean): Transaction {
             amount: amount.toFixed(2),
             currency: "EUR"
         },
-        remittanceInformationUnstructuredArray: [`Random transaction ${transactionId}`],
+        ...(useUnstructuredArray
+            ? { remittanceInformationUnstructuredArray: Array.from({ length: Math.floor(Math.random() * 3) + 1 }, generateRandomInfoEntry) }
+            : { remittanceInformationUnstructured: generateRandomInfoEntry() }
+        ),
         bankTransactionCode: "PMNT",
-        ...(isPositiveAmount
-            ? { debtorName: randomName }
-            : { creditorName: randomName }
+        ...(useAdditionalInfo
+            ? { additionalInformation: randomInfo }
+            : isPositiveAmount
+                ? { debtorName: randomName }
+                : { creditorName: randomName }
         ),
         debtorAccount: {
             iban: `DE${Math.floor(Math.random() * 1000000000000000000)}`

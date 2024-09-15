@@ -10,6 +10,7 @@ export interface Transaction {
   bankTransactionCode: string;
   debtorName?: string;
   creditorName?: string;
+  additionalInformation?: string;
   debtorAccount: {
     iban: string;
   };

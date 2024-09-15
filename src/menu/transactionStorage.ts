@@ -77,27 +77,27 @@ export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spre
       const row = new Array(maxColumnIndex).fill('');
       Object.entries(columnIndexes).forEach(([field, index]) => {
         let value: any;
-        if (field === 'transactionSignal') {
-          const amount = parseFloat(getNestedValue(transaction, 'transactionAmount.amount'));
+        const amount = parseFloat(getNestedValue(transaction, 'transactionAmount.amount'));
+
+        // Handle the Merchant column
+        if (field === 'debtorName') {
+          value = amount >= 0
+            ? (transaction.debtorName || transaction.additionalInformation || '')
+            : (transaction.creditorName || transaction.additionalInformation || '');
+        } else if (field === 'transactionSignal') {
           value = amount >= 0 ? '+' : '-';
         } else if (field === 'customAccountName') {
           value = customName;
         } else if (field === 'transactionStatus') {
           value = transaction.isPending ? 'p' : '';
-        } else if (field === 'debtorName') {
-          // Replace debtorName with Merchant
-          const amount = parseFloat(getNestedValue(transaction, 'transactionAmount.amount'));
-          value = amount >= 0 ? transaction.debtorName : transaction.creditorName;
-        } else if (field === 'remittanceInformationUnstructured') {
-          // Join remittanceInformationUnstructuredArray
-          value = transaction.remittanceInformationUnstructuredArray?.join(' ') || '';
+        } else if (field === 'remittanceInformationUnstructuredArray') {
+          value = transaction.remittanceInformationUnstructuredArray?.join(' ') || transaction.remittanceInformationUnstructured || '';
         } else {
           value = getNestedValue(transaction, field);
         }
 
         if (value !== undefined) {
           if (field === 'transactionAmount.amount') {
-            const amount = parseFloat(value);
             if (isSignalColumnSelected) {
               value = Math.abs(amount).toString(); // Store absolute value if signal column is selected
             } else {
