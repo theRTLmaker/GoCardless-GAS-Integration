@@ -154,12 +154,12 @@ function createAgreementAndRequisition(spreadsheet: GoogleAppsScript.Spreadsheet
   scriptProperties.setProperty('LAST_REQUISITION_ID', requisitionData.id);
 
   // Show authentication link to user
-  const htmlOutput = HtmlService.createHtmlOutput(
-    `<p>Go to <a href="${requisitionData.link}" target="_blank">this link</a> to authenticate your account.</p>` +
-    `<p>Once done, close this dialog and use the "Fetch Accounts" option from the menu to load your account data.</p>`
-  )
+  const htmlTemplate = HtmlService.createTemplateFromFile('src/html/AuthenticationLinkDialog');
+  htmlTemplate.authLink = requisitionData.link;
+
+  const htmlOutput = htmlTemplate.evaluate()
     .setWidth(450)
-    .setHeight(250);
+    .setHeight(370);
 
   ui.showModalDialog(htmlOutput, "Authenticate with your bank");
 }

@@ -74,9 +74,9 @@ function getAccountDataFromSpreadsheet(spreadsheet: GoogleAppsScript.Spreadsheet
   const accountData = values.slice(1)
     .map(row => ({
       accountId: row[accountIdIndex],
-      sheetName: row[sheetNameIndex],
-      customName: row[customNameIndex],
-      isCreditCard: row[creditCardIndex] === 'X'
+      sheetName: sanitizeString(row[sheetNameIndex]),
+      customName: sanitizeString(row[customNameIndex]),
+      isCreditCard: Boolean(row[creditCardIndex] && row[creditCardIndex].toString().toUpperCase() === 'X')
     }));
 
   // Check if any account ID doesn't have a sheet name or custom name
