@@ -1,4 +1,4 @@
-export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spreadsheet, accountId: string, sheetName: string, transactions: Transaction[], customName: string) {
+export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spreadsheet, accountId: string, sheetName: string, transactions: Transaction[], customName: string, isCreditCard: boolean) {
   let sheet = spreadsheet.getSheetByName(sheetName);
   const isNewSheet = !sheet;
   if (isNewSheet) {
@@ -79,13 +79,17 @@ export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spre
         let value: any;
         const amount = parseFloat(getNestedValue(transaction, 'transactionAmount.amount'));
 
-        // Handle the Merchant column
         if (field === 'debtorName') {
+          // Handle the Merchant column
           value = amount >= 0
             ? (transaction.debtorName || transaction.additionalInformation || '')
             : (transaction.creditorName || transaction.additionalInformation || '');
         } else if (field === 'transactionSignal') {
-          value = amount >= 0 ? '+' : '-';
+          if (isCreditCard && amount < 0) {
+            value = 'x';
+          } else {
+            value = amount >= 0 ? '+' : '-';
+          }
         } else if (field === 'customAccountName') {
           value = customName;
         } else if (field === 'transactionStatus') {
@@ -117,7 +121,7 @@ export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spre
   sortTransactionsByBookingDate(sheet, columnMappings);
 
   // Update running balance
-  updateRunningBalance(sheet, columnMappings);
+  updateRunningBalance(sheet, columnMappings, isCreditCard);
 
   Logger.log(`Stored ${newTransactions.length} new transactions for account ${accountId} (${customName}) in sheet ${sheetName}`);
 }
@@ -256,7 +260,7 @@ function sortTransactionsByBookingDate(sheet: GoogleAppsScript.Spreadsheet.Sheet
   range.sort({ column: bookingDateIndex, ascending: true });
 }
 
-function updateRunningBalance(sheet: GoogleAppsScript.Spreadsheet.Sheet, columnMappings: Record<string, string>) {
+function updateRunningBalance(sheet: GoogleAppsScript.Spreadsheet.Sheet, columnMappings: Record<string, string>, isCreditCard: boolean) {
   const amountColumn = columnMappings['transactionAmount.amount'];
   const customAccountNameColumn = columnMappings['customAccountName'];
   const signalColumn = columnMappings['transactionSignal'];
@@ -300,7 +304,22 @@ function updateRunningBalance(sheet: GoogleAppsScript.Spreadsheet.Sheet, columnM
       runningBalances[accountName] = 0;
     }
     if (signals) {
-      amount = signals[i] === '-' ? -Math.abs(amount) : Math.abs(amount);
+      if (isCreditCard) {
+        // For credit cards, we use a different signal system
+        if (signals[i] === 'x') {
+          // 'x' indicates a charge, so we make the amount negative
+          amount = -Math.abs(amount);
+        } else if (signals[i] === '+') {
+          // '+' indicates a payment or credit, so we keep the amount positive
+          amount = Math.abs(amount);
+        } else {
+          // If the signal is neither 'x' nor '+', we assume it's not a valid transaction
+          // and set the amount to 0 to exclude it from balance calculations
+          amount = 0;
+        }
+      } else {
+        amount = signals[i] === '-' ? -Math.abs(amount) : Math.abs(amount);
+      }
     }
     runningBalances[accountName] += amount;
     const columnIndex = customAccountColumns[accountName];
@@ -315,7 +334,7 @@ export function sortAndUpdateBalance() {
 
   if (activeSheet.getName().startsWith('Database')) {
     sortTransactionsByBookingDate(activeSheet, columnMappings);
-    updateRunningBalance(activeSheet, columnMappings);
+    updateRunningBalance(activeSheet, columnMappings, false);
     SpreadsheetApp.getUi().alert('Transactions sorted and balances updated successfully.');
   } else {
     SpreadsheetApp.getUi().alert('Please select a transaction sheet (starting with "Database") to sort and update balances.');

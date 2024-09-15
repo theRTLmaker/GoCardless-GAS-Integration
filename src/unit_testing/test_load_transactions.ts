@@ -25,11 +25,14 @@ function testStoreTransactions() {
     // Generate test transactions
     const testTransactions = generateTestTransactions();
 
+    // Randomly determine if this is a credit card account (low probability)
+    const isCreditCard = Math.random() < 0.1;
+
     // Call storeTransactions with test data
-    storeTransactions(spreadsheet, testAccountId, testSheetName, testTransactions, testBankName);
+    storeTransactions(spreadsheet, testAccountId, testSheetName, testTransactions, testBankName, isCreditCard);
 
     // Log completion message
-    Logger.log(`Test completed. Check the "${testSheetName}" sheet for results.`);
+    Logger.log(`Test completed. Check the "${testSheetName}" sheet for results. Is Credit Card: ${isCreditCard}`);
 }
 
 // Mock data

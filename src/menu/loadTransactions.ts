@@ -23,14 +23,14 @@ function _loadTransactions() {
   let processedAccounts = 0;
   let rateLimitedAccounts = 0;
 
-  accountData.forEach(({ accountId, sheetName, customName }) => {
+  accountData.forEach(({ accountId, sheetName, customName, isCreditCard }) => {
     try {
       const transactions = fetchTransactionsForAccount(accessToken, accountId);
       if (transactions === null) {
         // Rate limit error occurred
         rateLimitedAccounts++;
       } else if (transactions && transactions.length > 0) {
-        storeTransactions(spreadsheet, accountId, sheetName, transactions, customName);
+        storeTransactions(spreadsheet, accountId, sheetName, transactions, customName, isCreditCard);
         totalTransactions += transactions.length;
         processedAccounts++;
       } else {
@@ -49,7 +49,7 @@ function _loadTransactions() {
   SpreadsheetApp.getActive().toast(resultMessage, "Load Transactions Complete", 10);
 }
 
-function getAccountDataFromSpreadsheet(spreadsheet: GoogleAppsScript.Spreadsheet.Spreadsheet): Array<{ accountId: string; sheetName: string; customName: string }> {
+function getAccountDataFromSpreadsheet(spreadsheet: GoogleAppsScript.Spreadsheet.Spreadsheet): Array<{ accountId: string; sheetName: string; customName: string; isCreditCard: boolean }> {
   const sheet = spreadsheet.getSheetByName(REQUISITIONS_SHEET_NAME);
   if (!sheet) {
     Logger.log(`${REQUISITIONS_SHEET_NAME} sheet not found`);
@@ -59,11 +59,25 @@ function getAccountDataFromSpreadsheet(spreadsheet: GoogleAppsScript.Spreadsheet
 
   const dataRange = sheet.getDataRange();
   const values = dataRange.getValues();
+  const headers = values[0];
 
-  // Assuming the account IDs are in the 5th column (index 4), the Sheet Names are in the 6th column (index 5),
-  // and the Custom Account Names are in the 7th column (index 6)
+  const accountIdIndex = headers.indexOf('Accounts');
+  const sheetNameIndex = headers.indexOf('Sheet Name');
+  const customNameIndex = headers.indexOf('Custom Account Name');
+  const creditCardIndex = headers.indexOf('Credit Card');
+
+  if (accountIdIndex === -1 || sheetNameIndex === -1 || customNameIndex === -1 || creditCardIndex === -1) {
+    SpreadsheetApp.getUi().alert("One or more required columns are missing in the Requisitions sheet. Please check the sheet structure.");
+    return [];
+  }
+
   const accountData = values.slice(1)
-    .map(row => ({ accountId: row[4], sheetName: row[5], customName: row[6] }));
+    .map(row => ({
+      accountId: row[accountIdIndex],
+      sheetName: row[sheetNameIndex],
+      customName: row[customNameIndex],
+      isCreditCard: row[creditCardIndex] === 'X'
+    }));
 
   // Check if any account ID doesn't have a sheet name or custom name
   const missingInfo = accountData.find(data => data.accountId && (!data.sheetName || !data.customName));
