@@ -9,24 +9,25 @@ function fetchAccounts() {
     }
 
     const accessToken = getAccessToken();
-    const accountIds = fetchAccountIds(accessToken, requisitionId);
+    const { accounts, institutionId } = fetchAccountIds(accessToken, requisitionId);
 
-    if (accountIds.length === 0) {
+    if (accounts.length === 0) {
       ui.alert("No accounts found or authentication not completed. Please try again later.");
       return;
     }
 
     // Store account data
-    storeRequisitionAndAccountData(spreadsheet, { id: requisitionId, status: 'COMPLETED' }, accountIds);
+    storeRequisitionAndAccountData(spreadsheet, { id: requisitionId, status: 'COMPLETED' }, accounts, institutionId);
 
-    ui.alert(`Successfully fetched ${accountIds.length} accounts.`);
+    ui.alert(`Successfully fetched ${accounts.length} accounts.`);
     PropertiesService.getScriptProperties().deleteProperty('LAST_REQUISITION_ID');
   }
 
-  function fetchAccountIds(accessToken: string, requisitionId: string): string[] {
+  function fetchAccountIds(accessToken: string, requisitionId: string): { accounts: string[], institutionId: string } {
     const url = `/api/v2/requisitions/${requisitionId}/`;
     const requisitionDetails = goCardlessRequest<{
       id: string;
+      institution_id: string;
       status: string;
       accounts: string[];
     }>(url, {
@@ -41,51 +42,43 @@ function fetchAccounts() {
 
     if (!requisitionDetails) {
       Logger.log(`Failed to fetch requisition details for ${requisitionId}`);
-      return [];
+      return { accounts: [], institutionId: '' };
     }
+
+    const result = { accounts: [], institutionId: requisitionDetails.institution_id };
 
     switch (requisitionDetails.status) {
       case 'CR':
         Logger.log(`Requisition ${requisitionId} is still in CREATED status. User needs to complete authentication.`);
-        return [];
+        break;
       case 'LN':
         Logger.log(`Requisition ${requisitionId} is in LINKED status.`);
-        return requisitionDetails.accounts || [];
+        result.accounts = requisitionDetails.accounts || [];
+        break;
       case 'RJ':
         Logger.log(`Requisition ${requisitionId} was REJECTED.`);
-        return [];
+        break;
       case 'SA':
         Logger.log(`Requisition ${requisitionId} is in SUSPENDED state.`);
-        return requisitionDetails.accounts || [];
+        result.accounts = requisitionDetails.accounts || [];
+        break;
       default:
         Logger.log(`Unknown status ${requisitionDetails.status} for requisition ${requisitionId}`);
-        return [];
     }
+
+    return result;
   }
 
   function storeRequisitionAndAccountData(
     spreadsheet: GoogleAppsScript.Spreadsheet.Spreadsheet,
     requisitionData: { id: string; status: string },
-    accountIds: string[]
+    accountIds: string[],
+    institutionId: string
   ) {
     let requisitionsSheet = spreadsheet.getSheetByName(REQUISITIONS_SHEET_NAME);
     if (!requisitionsSheet) {
       requisitionsSheet = spreadsheet.insertSheet(REQUISITIONS_SHEET_NAME);
-      requisitionsSheet.appendRow(["ID", "Status", "Institution ID", "Institution Name", "Accounts", "Sheet Name", "Custom Account Name"]);
-    }
-
-    // Find the institution data from the existing rows
-    const dataRange = requisitionsSheet.getDataRange();
-    const values = dataRange.getValues();
-    let institutionId = "";
-    let institutionName = "";
-
-    for (let i = 1; i < values.length; i++) {
-      if (values[i][0] === requisitionData.id) {
-        institutionId = values[i][2];
-        institutionName = values[i][3];
-        break;
-      }
+      requisitionsSheet.appendRow(["ID", "Status", "Institution ID", "Accounts", "Sheet Name", "Custom Account Name", "Credit Card"]);
     }
 
     // Add a row for each account
@@ -94,10 +87,10 @@ function fetchAccounts() {
         requisitionData.id,
         requisitionData.status,
         institutionId,
-        institutionName,
         accountId,
         "",  // Empty Sheet Name column
-        ""   // Empty Custom Account Name column
+        "",  // Empty Custom Account Name column
+        ""   // Empty Credit Card column
       ]);
     });
 
