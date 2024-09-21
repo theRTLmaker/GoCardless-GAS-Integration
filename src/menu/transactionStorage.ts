@@ -137,7 +137,7 @@ export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spre
   sortTransactionsByBookingDate(sheet, columnMappings);
 
   // Update running balance
-  updateRunningBalance(sheet, columnMappings, isCreditCard);
+  updateRunningBalance(sheet, columnMappings);
 
   Logger.log(`Stored ${newTransactions.length} new transactions for account ${accountId} (${customName}) in sheet ${sheetName}`);
 }
@@ -276,7 +276,7 @@ function sortTransactionsByBookingDate(sheet: GoogleAppsScript.Spreadsheet.Sheet
   range.sort({ column: bookingDateIndex, ascending: true });
 }
 
-function updateRunningBalance(sheet: GoogleAppsScript.Spreadsheet.Sheet, columnMappings: Record<string, string>, isCreditCard: boolean) {
+function updateRunningBalance(sheet: GoogleAppsScript.Spreadsheet.Sheet, columnMappings: Record<string, string>) {
   const amountColumn = columnMappings['transactionAmount.amount'];
   const customAccountNameColumn = columnMappings['customAccountName'];
   const signalColumn = columnMappings['transactionSignal'];
@@ -294,6 +294,9 @@ function updateRunningBalance(sheet: GoogleAppsScript.Spreadsheet.Sheet, columnM
 
   const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const customAccountColumns: { [key: string]: number } = {};
+
+  // Get credit card information from the requisitions sheet
+  const creditCardAccounts = getCreditCardAccounts();
 
   customAccountNames.forEach(name => {
     if (!customAccountColumns[name]) {
@@ -319,6 +322,7 @@ function updateRunningBalance(sheet: GoogleAppsScript.Spreadsheet.Sheet, columnM
     if (!runningBalances[accountName]) {
       runningBalances[accountName] = 0;
     }
+    const isCreditCard = creditCardAccounts.includes(accountName);
     if (signals) {
       if (isCreditCard) {
         // For credit cards, we use a different signal system
@@ -343,6 +347,29 @@ function updateRunningBalance(sheet: GoogleAppsScript.Spreadsheet.Sheet, columnM
   }
 }
 
+function getCreditCardAccounts(): string[] {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const requisitionsSheet = ss.getSheetByName(REQUISITIONS_SHEET_NAME);
+  if (!requisitionsSheet) {
+    throw new Error(`Sheet "${REQUISITIONS_SHEET_NAME}" not found.`);
+  }
+
+  const lastRow = requisitionsSheet.getLastRow();
+  const headerRow = requisitionsSheet.getRange(1, 1, 1, requisitionsSheet.getLastColumn()).getValues()[0];
+  const customNameIndex = headerRow.indexOf('Custom Account Name');
+  const creditCardIndex = headerRow.indexOf('Credit Card');
+
+  const data = requisitionsSheet.getRange(2, 1, lastRow - 1, requisitionsSheet.getLastColumn()).getValues();
+
+  if (customNameIndex === -1 || creditCardIndex === -1) {
+    throw new Error('Required columns not found in the Requisitions sheet.');
+  }
+
+  return data.slice(1)
+    .filter(row => row[creditCardIndex] && row[creditCardIndex].toString().toUpperCase() === 'X')
+    .map(row => row[customNameIndex]);
+}
+
 export function sortAndUpdateBalance() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const activeSheet = ss.getActiveSheet();
@@ -350,7 +377,7 @@ export function sortAndUpdateBalance() {
 
   if (activeSheet.getName().startsWith('Database')) {
     sortTransactionsByBookingDate(activeSheet, columnMappings);
-    updateRunningBalance(activeSheet, columnMappings, false);
+    updateRunningBalance(activeSheet, columnMappings);
     SpreadsheetApp.getUi().alert('Transactions sorted and balances updated successfully.');
   } else {
     SpreadsheetApp.getUi().alert('Please select a transaction sheet (starting with "Database") to sort and update balances.');
