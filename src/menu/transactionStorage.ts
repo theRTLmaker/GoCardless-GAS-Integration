@@ -81,9 +81,10 @@ export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spre
 
         if (field === 'debtorName') {
           // Handle the Merchant column
+          const merchantInfo = transaction.additionalInformation || transaction.remittanceInformationUnstructured || '';
           value = amount >= 0
-            ? (transaction.debtorName || transaction.additionalInformation || '')
-            : (transaction.creditorName || transaction.additionalInformation || '');
+            ? (transaction.debtorName || merchantInfo)
+            : (transaction.creditorName || merchantInfo);
         } else if (field === 'transactionSignal') {
           if (isCreditCard && amount < 0) {
             value = 'x';
@@ -94,8 +95,23 @@ export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spre
           value = customName;
         } else if (field === 'transactionStatus') {
           value = transaction.isPending ? 'p' : '';
+        } else if (field === 'remittanceInformationUnstructured') {
+          value = transaction.remittanceInformationUnstructured || "";
         } else if (field === 'remittanceInformationUnstructuredArray') {
-          value = transaction.remittanceInformationUnstructuredArray?.join(' ') || transaction.remittanceInformationUnstructured || '';
+          value = transaction.remittanceInformationUnstructured ||
+                  (transaction.remittanceInformationUnstructuredArray?.length ?
+                   transaction.remittanceInformationUnstructuredArray.join(' ') :
+                   null);
+        } else if (field === 'transactionSignal') {
+          if (isCreditCard && amount < 0) {
+            value = 'x';
+          } else {
+            value = amount >= 0 ? '+' : '-';
+          }
+        } else if (field === 'transactionId') {
+          value = transaction.transactionId && transaction.transactionId.trim() !== ''
+                  ? transaction.transactionId
+                  : transaction.internalTransactionId || '';
         } else {
           value = getNestedValue(transaction, field);
         }
@@ -229,7 +245,7 @@ export function getTransactionFieldsWithDescriptions(): Array<{field: string, de
     { field: 'transactionAmount.amount', description: 'Amount', tooltip: 'The monetary value of the transaction.' },
     { field: 'transactionSignal', description: 'Signal', tooltip: 'The sign (+ or -) of the transaction amount.' },
     { field: 'transactionAmount.currency', description: 'Currency', tooltip: 'The currency in which the transaction amount is denominated.' },
-    { field: 'remittanceInformationUnstructuredArray', description: 'Additional Info', tooltip: 'Additional information about the transaction, such as a payment reference or note.' },
+    { field: 'remittanceInformationUnstructuredArray', description: 'Description', tooltip: 'Additional information about the transaction, such as a payment reference or note.' },
     { field: 'bankTransactionCode', description: 'Transaction Code', tooltip: 'A code used by the bank to categorize the type of transaction.' },
     { field: 'debtorName', description: 'Merchant', tooltip: 'The merchant name for outgoing transactions or the debtor name for incoming transactions.' },
     { field: 'debtorAccount.iban', description: 'Debtor IBAN', tooltip: 'The International Bank Account Number of the debtor\'s account.' },

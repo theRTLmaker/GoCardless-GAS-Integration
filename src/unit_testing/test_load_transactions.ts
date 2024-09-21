@@ -60,7 +60,15 @@ function generateTestTransactions(): Transaction[] {
         generateRandomTransaction()       // Random sign
     ];
 
-    return [constantTransaction, ...randomTransactions];
+    const allTransactions = [constantTransaction, ...randomTransactions];
+
+    // Log the transactions
+    Logger.log('Generated transactions:');
+    allTransactions.forEach((transaction, index) => {
+        Logger.log('Transaction ' + (index + 1) + ': ' + JSON.stringify(transaction));
+    });
+
+    return allTransactions;
 }
 
 function generateRandomTransaction(isPositive?: boolean): Transaction {
@@ -78,13 +86,17 @@ function generateRandomTransaction(isPositive?: boolean): Transaction {
     const randomName = `${isPositiveAmount ? 'Debtor' : 'Creditor'} ${Math.random().toString(36).substring(2, 8)}`;
     const randomInfo = `Additional Info ${Math.random().toString(36).substring(2, 8)}`;
 
-    const useAdditionalInfo = Math.random() < 0.5;
+    const useInternalTransactionId = Math.random() < 0.5;
+    const useAdditionalInfo = Math.random() < 0.33;
+    const useRemittanceInfo = Math.random() < 0.33;
     const useUnstructuredArray = Math.random() < 0.5;
 
     const generateRandomInfoEntry = () => `Random transaction ${Math.random().toString(36).substring(2, 8)}`;
 
     return {
-        transactionId: transactionId,
+        ...(useInternalTransactionId
+            ? { internalTransactionId: transactionId }
+            : { transactionId: transactionId }),
         bookingDate: date,
         valueDate: date,
         transactionAmount: {
@@ -93,14 +105,18 @@ function generateRandomTransaction(isPositive?: boolean): Transaction {
         },
         ...(useUnstructuredArray
             ? { remittanceInformationUnstructuredArray: Array.from({ length: Math.floor(Math.random() * 3) + 1 }, generateRandomInfoEntry) }
-            : { remittanceInformationUnstructured: generateRandomInfoEntry() }
+            : useRemittanceInfo
+                ? { remittanceInformationUnstructured: generateRandomInfoEntry() }
+                : {}
         ),
         bankTransactionCode: "PMNT",
         ...(useAdditionalInfo
             ? { additionalInformation: randomInfo }
-            : isPositiveAmount
-                ? { debtorName: randomName }
-                : { creditorName: randomName }
+            : useRemittanceInfo
+                ? {}
+                : isPositiveAmount
+                    ? { debtorName: randomName }
+                    : { creditorName: randomName }
         ),
         debtorAccount: {
             iban: `DE${Math.floor(Math.random() * 1000000000000000000)}`
