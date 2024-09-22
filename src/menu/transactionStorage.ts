@@ -43,16 +43,47 @@ export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spre
     return bookingDate < oldest ? bookingDate : oldest;
   }, new Date());
 
-  // Find the row with the oldest date that is the same or newer than the oldest new transaction
+  // Sort transactions by Booking Date because previously inserted transactions are not sorted
+  sortTransactionsByBookingDate(sheet, columnMappings);
+
+  const lastRow = sheet.getLastRow();
   let startRow = 2;
-  if (sheet.getLastRow() > 1) {
-    const dateValues = sheet.getRange(2, bookingDateIndex + 1, sheet.getLastRow() - 1, 1).getValues();
-    for (let i = 0; i < dateValues.length; i++) {
-      const sheetDate = new Date(dateValues[i][0]);
-      if (sheetDate >= oldestNewDate) {
-        startRow = i + 1; // +1 because we start from row 2 and i is 0-indexed
+
+  if (lastRow > 1) {
+    // Binary search to find the appropriate start row
+    let low = 2;
+    let high = lastRow;
+
+    while (low <= high) {
+      let mid = Math.floor((low + high) / 2);
+      const midDate = new Date(sheet.getRange(mid, bookingDateIndex + 1).getValue());
+      const midDateOnly = new Date(midDate.getFullYear(), midDate.getMonth(), midDate.getDate());
+      const oldestNewDateOnly = new Date(oldestNewDate.getFullYear(), oldestNewDate.getMonth(), oldestNewDate.getDate());
+
+      if (midDateOnly < oldestNewDateOnly) {
+        low = mid + 1;
+      } else if (midDateOnly > oldestNewDateOnly) {
+        high = mid - 1;
+      } else {
+        // If dates are equal, we've found our starting point
+        startRow = mid;
         break;
       }
+    }
+
+    // If we didn't find an exact match, low will be the correct starting point
+    if (startRow === 2) {
+      startRow = low;
+    }
+
+    // Adjust startRow to ensure we don't miss any transactions from the same day
+    while (startRow > 2) {
+      const prevDate = new Date(sheet.getRange(startRow - 1, bookingDateIndex + 1).getValue());
+      const prevDateOnly = new Date(prevDate.getFullYear(), prevDate.getMonth(), prevDate.getDate());
+      if (prevDateOnly.getTime() !== oldestNewDateOnly.getTime()) {
+        break;
+      }
+      startRow--;
     }
   }
 
@@ -62,7 +93,12 @@ export function storeTransactions(spreadsheet: GoogleAppsScript.Spreadsheet.Spre
     existingTransactionIds = new Set(existingIds.filter(id => id !== ""));
   }
 
-  const newTransactions = transactions.filter(transaction => !existingTransactionIds.has(transaction.transactionId));
+  const newTransactions = transactions.filter(transaction => {
+    const transactionId = transaction.transactionId && transaction.transactionId.trim() !== ''
+      ? transaction.transactionId
+      : transaction.internalTransactionId || '';
+    return !existingTransactionIds.has(transactionId);
+  });
 
   // Delete pending transactions
   deletePendingTransactions(sheet, columnMappings);
@@ -286,11 +322,42 @@ function updateRunningBalance(sheet: GoogleAppsScript.Spreadsheet.Sheet, columnM
   const customAccountNameIndex = columnLetterToIndex(customAccountNameColumn);
   const signalIndex = signalColumn ? columnLetterToIndex(signalColumn) : null;
   const lastRow = sheet.getLastRow();
-  const range = sheet.getRange(2, amountIndex, lastRow - 1, 1);
-  const values = range.getValues();
 
-  const customAccountNames = sheet.getRange(2, customAccountNameIndex, lastRow - 1, 1).getValues().flat();
-  const signals = signalIndex ? sheet.getRange(2, signalIndex, lastRow - 1, 1).getValues().flat() : null;
+  // Delete all "Current Balance" rows in the last 50 rows
+  const currentLastRow = sheet.getLastRow();
+  const startRow = Math.max(2, currentLastRow - 49);  // Start from the last 50 rows or row 2, whichever is greater
+  const searchRange = sheet.getRange(startRow, 1, currentLastRow - startRow + 1, 1);
+  const searchValues = searchRange.getValues();
+
+  let rowsToDelete = [];
+  for (let i = searchValues.length - 1; i >= 0; i--) {
+    if (searchValues[i][0] === "Current Balance") {
+      rowsToDelete.push(startRow + i);
+    }
+  }
+
+  // Delete rows from bottom to top to avoid shifting issues
+  for (let i = rowsToDelete.length - 1; i >= 0; i--) {
+    sheet.deleteRow(rowsToDelete[i]);
+  }
+
+  const range = sheet.getRange(2, amountIndex, sheet.getLastRow() - 1, 1);
+  let values = range.getValues();
+
+  let customAccountNames = sheet.getRange(2, customAccountNameIndex, sheet.getLastRow() - 1, 1).getValues().flat();
+
+  // Filter out empty cells and their corresponding amount values
+  const filteredData = customAccountNames.reduce((acc, name, index) => {
+    if (name !== '') {
+      acc.names.push(name);
+      acc.amounts.push(values[index]);
+    }
+    return acc;
+  }, { names: [], amounts: [] });
+
+  customAccountNames = filteredData.names;
+  values = filteredData.amounts;
+  const signals = signalIndex ? sheet.getRange(2, signalIndex, sheet.getLastRow() - 1, 1).getValues().flat() : null;
 
   const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const customAccountColumns: { [key: string]: number } = {};
@@ -311,7 +378,7 @@ function updateRunningBalance(sheet: GoogleAppsScript.Spreadsheet.Sheet, columnM
 
   // Delete all balances from the Account Columns
   Object.values(customAccountColumns).forEach(columnIndex => {
-    sheet.getRange(2, columnIndex, lastRow - 1, 1).clearContent();
+    sheet.getRange(2, columnIndex, sheet.getLastRow() - 1, 1).clearContent();
   });
 
   const runningBalances: { [key: string]: number } = {};
@@ -345,6 +412,16 @@ function updateRunningBalance(sheet: GoogleAppsScript.Spreadsheet.Sheet, columnM
     const columnIndex = customAccountColumns[accountName];
     sheet.getRange(i + 2, columnIndex).setValue(runningBalances[accountName]);
   }
+
+  // Print final balances on the second empty row
+  const firstEmptyRow = sheet.getLastRow() + 2
+  Object.entries(runningBalances).forEach(([accountName, balance]) => {
+    const columnIndex = customAccountColumns[accountName];
+    sheet.getRange(firstEmptyRow, columnIndex).setValue(balance);
+  });
+
+  // Optionally, add a label in the first column of the balance row
+  sheet.getRange(firstEmptyRow, 1).setValue("Current Balance");
 }
 
 function getCreditCardAccounts(): string[] {
@@ -365,9 +442,11 @@ function getCreditCardAccounts(): string[] {
     throw new Error('Required columns not found in the Requisitions sheet.');
   }
 
-  return data.slice(1)
+  const creditCardAccounts = data
     .filter(row => row[creditCardIndex] && row[creditCardIndex].toString().toUpperCase() === 'X')
     .map(row => row[customNameIndex]);
+
+  return creditCardAccounts;
 }
 
 export function sortAndUpdateBalance() {
