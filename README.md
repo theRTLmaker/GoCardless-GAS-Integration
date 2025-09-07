@@ -2,7 +2,7 @@
 
 Google Apps Script integration with GoCardless API to create a personal finance tracker
 
-Google Sheets Template: [Link](https://docs.google.com/spreadsheets/d/1nrxX-XEwtZW7U2Wft8X2VwDHoo80yLWcaF9ESQgHve0/edit?usp=sharing)
+Google Sheets Template: [Link](https://docs.google.com/spreadsheets/d/1nrxX-XEwtZW7U2Wft8X2VwDHoo80yLWcaF9ESQgHve0/copy?usp=sharing)
 
 ## Description
 
